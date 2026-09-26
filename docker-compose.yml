@@ -1,0 +1,9 @@
+services:
+  brewfather-mcp:
+    build: .
+    container_name: brewfather-mcp
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "8010:8000"

@@ -8,6 +8,7 @@ A Model Context Protocol (MCP) server that integrates with the Brewfather API to
 - **Recipe Analysis**: Access detailed recipe information including ingredients and process details
 - **Batch Tracking**: Monitor brewing batches, update measurements, and track progress
 - **Brewing Insights**: Get brewing process guidance and sensor readings
+- **Dockerized HTTP Deployment**: Run the server as a container exposing a secured Streamable HTTP endpoint
 
 ## Prerequisites
 
@@ -182,10 +183,40 @@ mcpt tools uv run --with 'mcp[cli]' mcp run src/main.py
 mcpt call list_inventory_categories uv run --with 'mcp[cli]' mcp run src/main.py
 ```
 
-### HTTP/SSE Server (for cloud deployment)
+### HTTP Server (for cloud/remote deployment)
+
+`src/http_runner.py` serves the MCP server over **Streamable HTTP** (the modern MCP transport that replaced SSE) rather than stdio, so it can be reached over the network by remote clients.
+
 ```bash
 PYTHONPATH=src uv run python src/http_runner.py --port 8000
 ```
+
+By default the server accepts unauthenticated requests from `localhost`/`127.0.0.1` only. When exposing it beyond your own machine, set:
+
+- `MCP_AUTH_TOKEN` – requires every request to send `Authorization: Bearer <token>`. Without this, the server logs a warning and runs open. Generate a token with:
+  ```bash
+  python3 -c "import secrets; print(secrets.token_urlsafe(32))"
+  ```
+- `ALLOWED_HOSTS` – comma-separated list of `Host` header values the server will accept (DNS-rebinding protection), e.g. `ALLOWED_HOSTS=mcp.example.com`.
+
+Both can also be passed as CLI flags (`--auth-token`, `--allowed-host`, repeatable).
+
+Connect to it with an MCP client at `http://<host>:<port>/mcp`, sending the bearer token as an `Authorization` header if you set one.
+
+## Docker Deployment
+
+The included `Dockerfile` and `docker-compose.yml` package the HTTP server for easy self-hosting.
+
+```bash
+cp .env.example .env
+# Edit .env: set BREWFATHER_API_USER_ID, BREWFATHER_API_KEY, and MCP_AUTH_TOKEN
+
+docker compose up -d --build
+```
+
+This builds the image, installs dependencies with `uv`, and runs `src/http_runner.py` on port 8000 inside the container (mapped to `8010` on the host by default — adjust in `docker-compose.yml` as needed). Credentials and server options (`BREWFATHER_API_USER_ID`, `BREWFATHER_API_KEY`, `MCP_AUTH_TOKEN`, `ALLOWED_HOSTS`) are read from the `.env` file via `env_file`.
+
+Point your MCP client at `http://<docker-host>:8010/mcp` with the `MCP_AUTH_TOKEN` value as a bearer token.
 
 ## Troubleshooting
 
