@@ -103,8 +103,8 @@ dev = [
     { name = "pytest-vcr", specifier = ">=1.0.2" },
     { name = "respx", specifier = ">=0.20.2" },
     { name = "vcrpy", specifier = ">=7.0.0" },
-    { name = "workers-py" },
-    { name = "workers-runtime-sdk" },
+    { name = "workers-py", specifier = ">=1.17" },
+    { name = "workers-runtime-sdk", specifier = ">=1.9" },
 ]
 
 [[package]]
