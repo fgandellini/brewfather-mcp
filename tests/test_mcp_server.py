@@ -20,10 +20,7 @@ from brewfather_mcp.server import (
     read_recipe_detail,
     read_miscs_list,
     read_misc_detail,
-    update_fermentable_inventory_tool,
-    update_hop_inventory_tool,
-    update_misc_inventory_tool,
-    update_yeast_inventory_tool,
+    set_inventory,
 )
 from brewfather_mcp.api import BrewfatherClient
 from brewfather_mcp.types import (
@@ -31,6 +28,7 @@ from brewfather_mcp.types import (
     BatchList,
     FermentableList,
     HopList,
+    InventoryCategory,
     Misc,
     MiscList,
     Recipe,
@@ -269,10 +267,7 @@ def mock_brewfather_client(mocker):
     client.get_misc_detail.return_value = misc_item
 
     # Mock inventory update methods
-    client.update_fermentable_inventory.return_value = None
-    client.update_hop_inventory.return_value = None
-    client.update_misc_inventory.return_value = None
-    client.update_yeast_inventory.return_value = None
+    client.update_inventory.return_value = None
 
     return client
 
@@ -539,47 +534,37 @@ class TestBrewfatherMCP:
             mock_logger.exception.assert_called_once_with("Error happened while fetching miscellaneous item detail for test-misc-id")
 
     # --- Inventory Update Tool Tests ---
-    @pytest.mark.asyncio
-    async def test_update_fermentable_inventory_tool_success(self, mock_brewfather_client):
-        with patch("brewfather_mcp.server.brewfather_client", mock_brewfather_client):
-            item_id = "f123"
-            amount = 10.5
-            result = await update_fermentable_inventory_tool(item_id, amount)
-            mock_brewfather_client.update_fermentable_inventory.assert_called_once_with(item_id, amount)
-            assert result == f"Fermentable inventory for item {item_id} updated to {amount} kg."
+    # --- set_inventory ---
 
     @pytest.mark.asyncio
-    async def test_update_fermentable_inventory_tool_error(self, mock_brewfather_client):
-        mock_brewfather_client.update_fermentable_inventory.side_effect = Exception("API Error Update Fermentable")
-        with patch("brewfather_mcp.server.brewfather_client", mock_brewfather_client), \
-             patch("brewfather_mcp.server.logger") as mock_logger:
-            with pytest.raises(Exception, match="API Error Update Fermentable"):
-                await update_fermentable_inventory_tool("f123", 10.0)
-            mock_logger.exception.assert_called_once_with("Error updating fermentable inventory for item f123")
+    async def test_set_inventory_amount(self, mock_brewfather_client):
+        with patch("brewfather_mcp.server.brewfather_client", mock_brewfather_client):
+            result = await set_inventory(kind="hops", item_id="h1", amount=50.0)
+            mock_brewfather_client.update_inventory.assert_called_once_with(
+                InventoryCategory.HOPS, "h1", {"inventory": 50.0}
+            )
+            assert "h1" in result and "50.0" in result
 
     @pytest.mark.asyncio
-    async def test_update_hop_inventory_tool_success(self, mock_brewfather_client):
+    async def test_set_inventory_adjust(self, mock_brewfather_client):
         with patch("brewfather_mcp.server.brewfather_client", mock_brewfather_client):
-            item_id = "h123"
-            amount = 200.0
-            result = await update_hop_inventory_tool(item_id, amount)
-            mock_brewfather_client.update_hop_inventory.assert_called_once_with(item_id, amount)
-            assert result == f"Hop inventory for item {item_id} updated to {amount} grams."
+            await set_inventory(kind="hops", item_id="h1", adjust=-20.0)
+            mock_brewfather_client.update_inventory.assert_called_once_with(
+                InventoryCategory.HOPS, "h1", {"inventory_adjust": -20.0}
+            )
 
     @pytest.mark.asyncio
-    async def test_update_misc_inventory_tool_success(self, mock_brewfather_client):
+    @pytest.mark.parametrize(
+        "kwargs",
+        [
+            {"kind": "hops", "item_id": "h1", "amount": 1.0, "adjust": 1.0},
+            {"kind": "hops", "item_id": "h1"},
+            {"kind": "grains", "item_id": "h1", "amount": 1.0},
+            {"kind": "hops", "item_id": "h1", "adjust": float("nan")},
+        ],
+    )
+    async def test_set_inventory_invalid(self, mock_brewfather_client, kwargs):
         with patch("brewfather_mcp.server.brewfather_client", mock_brewfather_client):
-            item_id = "m123"
-            amount = 5.0
-            result = await update_misc_inventory_tool(item_id, amount)
-            mock_brewfather_client.update_misc_inventory.assert_called_once_with(item_id, amount)
-            assert result == f"Miscellaneous inventory for item {item_id} updated to {amount} units."
-
-    @pytest.mark.asyncio
-    async def test_update_yeast_inventory_tool_success(self, mock_brewfather_client):
-        with patch("brewfather_mcp.server.brewfather_client", mock_brewfather_client):
-            item_id = "y123"
-            amount = 3.0
-            result = await update_yeast_inventory_tool(item_id, amount)
-            mock_brewfather_client.update_yeast_inventory.assert_called_once_with(item_id, amount)
-            assert result == f"Yeast inventory for item {item_id} updated to {amount} packets."
+            result = await set_inventory(**kwargs)
+            mock_brewfather_client.update_inventory.assert_not_called()
+            assert result.startswith("Invalid request:")

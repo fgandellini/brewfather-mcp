@@ -219,11 +219,11 @@ class BrewfatherClient:
         json_response = await self._make_request(url)
         return FermentableDetail.model_validate_json(json_response)
 
-    async def update_fermentable_inventory(self, id: str, inventory: float) -> None:
-        url = self._build_url(
-            f"inventory/{InventoryCategory.FERMENTABLES}", id=id
-        )
-        await self._make_patch_request(url, {"inventory": inventory})
+    async def update_inventory(
+        self, category: InventoryCategory, id: str, data: dict
+    ) -> None:
+        url = self._build_url(f"inventory/{category}", id=id)
+        await self._make_patch_request(url, data)
 
     # Batch endpoints
     async def get_batches_list(
@@ -268,12 +268,6 @@ class BrewfatherClient:
         json_response = await self._make_request(url)
         return HopDetail.model_validate_json(json_response)
     
-    async def update_hop_inventory(self, id: str, inventory: float) -> None:
-        url = self._build_url(
-            f"inventory/{InventoryCategory.HOPS}", id=id
-        )
-        await self._make_patch_request(url, {"inventory": inventory})
-
     async def get_yeasts_list(
         self, query_params: ListQueryParams | None = None
     ) -> YeastList:
@@ -290,12 +284,6 @@ class BrewfatherClient:
         json_response = await self._make_request(url)
         return YeastDetail.model_validate_json(json_response)
     
-    async def update_yeast_inventory(self, id: str, inventory: float) -> None:
-        url = self._build_url(
-            f"inventory/{InventoryCategory.YEASTS}", id=id
-        )
-        await self._make_patch_request(url, {"inventory": inventory})
-
     async def get_miscs_list(
         self, query_params: ListQueryParams | None = None
     ) -> MiscList:
@@ -312,12 +300,6 @@ class BrewfatherClient:
         json_response = await self._make_request(url)
         return MiscDetail.model_validate_json(json_response)
     
-    async def update_misc_inventory(self, id: str, inventory: float) -> None:
-        url = self._build_url(
-            f"inventory/{InventoryCategory.MISCS}", id=id
-        )
-        await self._make_patch_request(url, {"inventory": inventory})
-
     # Brewtracker endpoints
     async def get_batch_brewtracker(self, batch_id: str) -> BrewTrackerStatus:
         """Get brewtracker status for a batch"""

@@ -12,6 +12,7 @@ from brewfather_mcp.api import (
     RateLimitError,
 )
 from brewfather_mcp.types import (
+    InventoryCategory,
     Batch,
     BatchDetail,
     BatchList,
@@ -139,6 +140,31 @@ async def test_rate_limit_post(client: BrewfatherClient, respx_mock: MockRouter)
         await client._make_post_request(f"{BASE_URL}/recipes", {})
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "category, body",
+    [
+        (InventoryCategory.HOPS, {"inventory_adjust": -20}),
+        (InventoryCategory.FERMENTABLES, {"inventory": 25.5}),
+        (InventoryCategory.MISCS, {"inventory": 3}),
+        (InventoryCategory.YEASTS, {"inventory_adjust": 2}),
+    ],
+)
+async def test_update_inventory_patch(
+    client: BrewfatherClient,
+    respx_mock: MockRouter,
+    category: InventoryCategory,
+    body: dict,
+):
+    respx_mock.patch(f"{BASE_URL}/inventory/{category}/item1").mock(
+        return_value=httpx.Response(200)
+    )
+    await client.update_inventory(category, "item1", body)
+    request = respx_mock.calls.last.request
+    assert request.method == "PATCH"
+    assert json.loads(request.content) == body
+
+
 class TestFermentables:
     @pytest.mark.asyncio
     async def test_get_fermentables_list(
@@ -185,21 +211,6 @@ class TestFermentables:
         assert isinstance(result, FermentableDetail)
         assert result.id == item_id
         assert result.potential == 1.035
-
-    @pytest.mark.asyncio
-    async def test_update_fermentable_inventory(
-        self, client: BrewfatherClient, respx_mock: MockRouter
-    ):
-        item_id = "f_inv_update"
-        inventory_amount = 25.5
-        respx_mock.patch(f"{BASE_URL}/inventory/fermentables/{item_id}").mock(
-            return_value=httpx.Response(200)
-        )
-        await client.update_fermentable_inventory(item_id, inventory_amount)
-        assert len(respx_mock.calls) == 1
-        request = respx_mock.calls.last.request
-        assert request.method == "PATCH"
-        assert json.loads(request.content) == {"inventory": inventory_amount}
 
     @pytest.mark.parametrize("filename,test_id", get_debug_files_by_type(r"^inventory_fermentables(?:_(.+))?$"))
     @pytest.mark.asyncio
@@ -268,20 +279,6 @@ class TestHops:
         assert isinstance(result, HopDetail)
         assert result.alpha == 12.0
 
-    @pytest.mark.asyncio
-    async def test_update_hop_inventory(
-        self, client: BrewfatherClient, respx_mock: MockRouter
-    ):
-        item_id = "h_inv_update"
-        inventory_amount = 150.0
-        respx_mock.patch(f"{BASE_URL}/inventory/hops/{item_id}").mock(
-            return_value=httpx.Response(200)
-        )
-        await client.update_hop_inventory(item_id, inventory_amount)
-        assert len(respx_mock.calls) == 1
-        request = respx_mock.calls.last.request
-        assert json.loads(request.content) == {"inventory": inventory_amount}
-
     @pytest.mark.parametrize("filename,test_id", get_debug_files_by_type(r"^inventory_hops(?:_(.+))?$"))
     @pytest.mark.asyncio
     async def test_hops_data_validation(self, client: BrewfatherClient, respx_mock: MockRouter, filename: str, test_id: str):
@@ -348,20 +345,6 @@ class TestYeasts:
         result = await client.get_yeast_detail(item_id)
         assert isinstance(result, YeastDetail)
         assert result.laboratory == "White Labs"
-
-    @pytest.mark.asyncio
-    async def test_update_yeast_inventory(
-        self, client: BrewfatherClient, respx_mock: MockRouter
-    ):
-        item_id = "y_inv_update"
-        inventory_amount = 10.0
-        respx_mock.patch(f"{BASE_URL}/inventory/yeasts/{item_id}").mock(
-            return_value=httpx.Response(200)
-        )
-        await client.update_yeast_inventory(item_id, inventory_amount)
-        assert len(respx_mock.calls) == 1
-        request = respx_mock.calls.last.request
-        assert json.loads(request.content) == {"inventory": inventory_amount}
 
     @pytest.mark.parametrize("filename,test_id", get_debug_files_by_type(r"^inventory_yeasts(?:_(.+))?$"))
     @pytest.mark.asyncio
@@ -572,20 +555,6 @@ class TestMiscellaneous:
         assert isinstance(result, Misc)
         assert result.id == item_id
         assert result.notes == "Use 1 tablet per 5 gallons"
-
-    @pytest.mark.asyncio
-    async def test_update_misc_inventory(
-        self, client: BrewfatherClient, respx_mock: MockRouter
-    ):
-        item_id = "m_inv_update"
-        inventory_amount = 20.0
-        respx_mock.patch(f"{BASE_URL}/inventory/miscs/{item_id}").mock(
-            return_value=httpx.Response(200)
-        )
-        await client.update_misc_inventory(item_id, inventory_amount)
-        assert len(respx_mock.calls) == 1
-        request = respx_mock.calls.last.request
-        assert json.loads(request.content) == {"inventory": inventory_amount}
 
     @pytest.mark.parametrize("filename,test_id", get_debug_files_by_type(r"^inventory_miscs(?:_(.+))?$"))
     @pytest.mark.asyncio

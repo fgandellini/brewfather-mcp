@@ -23,7 +23,11 @@ from brewfather_mcp.types.misc import MiscUse, MiscType
 from brewfather_mcp.types.fermentable import FermentableType, FermentableGrainGroup
 from brewfather_mcp.types.base import MashStepType, FermentationStepType
 from brewfather_mcp.formatter import format_recipe_details
-from brewfather_mcp.validation import validate_batch_update
+from brewfather_mcp.validation import (
+    parse_inventory_kind,
+    require_number,
+    validate_batch_update,
+)
 from typing import Optional
 from datetime import datetime
 
@@ -805,58 +809,39 @@ Notes: {item.notes or 'N/A'}
 
 # Inventory Update Tools
 @mcp.tool(
-    name="update_fermentable_inventory",
-    description="Sets the inventory amount for a specific fermentable.",
+    name="set_inventory",
+    description=(
+        "Changes the stock of an inventory item. kind is one of fermentables, hops, miscs, "
+        "yeasts. Give either amount (sets the new total) or adjust (adds a positive or "
+        "subtracts a negative quantity), not both. Units: kg for fermentables, grams for "
+        "hops, the item's own unit for yeasts and miscs."
+    ),
 )
-async def update_fermentable_inventory_tool(item_id: str, inventory_amount: float) -> str:
-    logger.info(f"Tool: update_fermentable_inventory_tool called for item {item_id} with amount {inventory_amount}")
+async def set_inventory(
+    kind: str,
+    item_id: str,
+    amount: Optional[float] = None,
+    adjust: Optional[float] = None,
+) -> str:
+    logger.info(f"Tool: set_inventory called for {kind} {item_id}")
     try:
-        await brewfather_client.update_fermentable_inventory(item_id, inventory_amount)
-        return f"Fermentable inventory for item {item_id} updated to {inventory_amount} kg."
-    except Exception:
-        logger.exception(f"Error updating fermentable inventory for item {item_id}")
-        raise
+        category = parse_inventory_kind(kind)
+        if (amount is None) == (adjust is None):
+            raise ValueError("give exactly one of amount or adjust")
+        if amount is not None:
+            body = {"inventory": require_number("amount", amount)}
+            summary = f"set to {amount}"
+        else:
+            body = {"inventory_adjust": require_number("adjust", adjust)}
+            summary = f"adjusted by {adjust}"
+    except ValueError as error:
+        return f"Invalid request: {error}"
 
-
-@mcp.tool(
-    name="update_hop_inventory",
-    description="Sets the inventory amount for a specific hop.",
-)
-async def update_hop_inventory_tool(item_id: str, inventory_amount: float) -> str:
-    logger.info(f"Tool: update_hop_inventory_tool called for item {item_id} with amount {inventory_amount}")
     try:
-        await brewfather_client.update_hop_inventory(item_id, inventory_amount)
-        return f"Hop inventory for item {item_id} updated to {inventory_amount} grams."
+        await brewfather_client.update_inventory(category, item_id, body)
+        return f"Inventory of {category} item {item_id} {summary}."
     except Exception:
-        logger.exception(f"Error updating hop inventory for item {item_id}")
-        raise
-
-
-@mcp.tool(
-    name="update_misc_inventory",
-    description="Sets the inventory amount for a specific miscellaneous item.",
-)
-async def update_misc_inventory_tool(item_id: str, inventory_amount: float) -> str:
-    logger.info(f"Tool: update_misc_inventory_tool called for item {item_id} with amount {inventory_amount}")
-    try:
-        await brewfather_client.update_misc_inventory(item_id, inventory_amount)
-        return f"Miscellaneous inventory for item {item_id} updated to {inventory_amount} units."
-    except Exception:
-        logger.exception(f"Error updating miscellaneous inventory for item {item_id}")
-        raise
-
-
-@mcp.tool(
-    name="update_yeast_inventory",
-    description="Sets the inventory amount for a specific yeast.",
-)
-async def update_yeast_inventory_tool(item_id: str, inventory_amount: float) -> str:
-    logger.info(f"Tool: update_yeast_inventory_tool called for item {item_id} with amount {inventory_amount}")
-    try:
-        await brewfather_client.update_yeast_inventory(item_id, inventory_amount)
-        return f"Yeast inventory for item {item_id} updated to {inventory_amount} packets."
-    except Exception:
-        logger.exception(f"Error updating yeast inventory for item {item_id}")
+        logger.exception(f"Error updating {kind} inventory for item {item_id}")
         raise
 
 

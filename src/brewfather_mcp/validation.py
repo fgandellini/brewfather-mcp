@@ -7,6 +7,7 @@ All functions raise ValueError with a message that is safe to show to the user.
 import math
 
 from brewfather_mcp.types.batch import BatchStatus
+from brewfather_mcp.types.inventory import InventoryCategory
 
 SG_RANGE = (0.1, 1.9)
 VOLUME_RANGE = (0.0, None)
@@ -43,6 +44,15 @@ def require_number(
     if maximum is not None and value > maximum:
         raise ValueError(f"{name} must be at most {maximum}, got {value}")
     return float(value)
+
+
+def parse_inventory_kind(kind: str) -> InventoryCategory:
+    """Convert a user-supplied inventory kind (hops, fermentables, ...) to its category."""
+    try:
+        return InventoryCategory(kind)
+    except ValueError:
+        valid = [c.value for c in InventoryCategory]
+        raise ValueError(f"kind must be one of {valid}, got {kind!r}") from None
 
 
 def validate_batch_update(
