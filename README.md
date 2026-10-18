@@ -4,9 +4,9 @@ A Model Context Protocol (MCP) server that integrates with the Brewfather API to
 
 ## Features
 
-- **Inventory Management**: List and manage fermentables, hops, yeasts, and miscellaneous brewing supplies
-- **Recipe Analysis**: Access detailed recipe information including ingredients and process details
-- **Batch Tracking**: Monitor brewing batches, update measurements, and track progress
+- **Inventory Management**: List, search, create, edit and adjust the stock of fermentables, hops, yeasts, and miscellaneous brewing supplies
+- **Recipes**: Read detailed recipe information, search recipes, create new recipes and update existing ones
+- **Batch Tracking**: Monitor brewing batches, update or clear measurements, and track progress
 - **Brewing Insights**: Get brewing process guidance and sensor readings
 - **Dockerized HTTP Deployment**: Run the server as a container exposing a secured Streamable HTTP endpoint
 
@@ -22,6 +22,18 @@ A Model Context Protocol (MCP) server that integrates with the Brewfather API to
 2. Navigate to Settings → API
 3. Generate or copy your API User ID and API Key
 4. Keep these credentials secure - you'll need them for configuration
+
+### API key scopes
+
+When you generate the key you choose its scopes. Grant only what you need:
+
+| Use | Scopes |
+| --- | --- |
+| Read-only (all list/get/find tools) | `recipes.read`, `batches.read`, `inventory.read` |
+| Change data | add `recipes.write`, `batches.write`, `inventory.write` as needed |
+| Delete | **never grant** `*.delete` - no tool in this server deletes anything |
+
+Brewfather allows 500 API calls per hour per key. When the limit is reached, the tools return an error that includes the retry delay. Batches cannot be created through the API: create the batch from a recipe in the Brewfather app, then use this server to update it.
 
 ## Installation
 
@@ -145,30 +157,41 @@ The server provides the following MCP tools:
 - `list_misc_items` - List miscellaneous brewing supplies
 - `get_misc_detail(item_id)` - Get detailed misc item information
 - `inventory_summary` - Get comprehensive inventory overview
+- `list_inventory(kind, name?, in_stock_only?)` - Compact list of one kind (`fermentables`, `hops`, `miscs`, `yeasts`), filtered by name or by stock
+
+### Inventory Updates
+- `set_inventory(kind, item_id, amount? | adjust?)` - Set the stock to a new total (`amount`) or add/subtract a quantity (`adjust`)
+- `create_inventory_item(kind, name, fields?, amount?)` - Create an inventory item, optionally with starting stock
+- `update_inventory_item(kind, item_id, fields)` - Edit item properties (not stock). Unknown fields and invalid values are rejected before anything is sent
 
 ### Recipe Management
 - `list_recipes` - List all recipes
+- `find_recipes(name?)` - Search recipes by name
 - `get_recipe_detail(recipe_id)` - Get detailed recipe information
+- `create_recipe(name, fields?)` - Create a recipe (metric units). Calculated values such as OG, IBU and color are not stored by the API: Brewfather computes them (and adds the default equipment and style) the first time the recipe is opened in the app
+- `update_recipe(recipe_id, fields)` - Update top-level recipe fields. An ingredient list replaces the whole list, and empty lists are refused
 
 ### Batch Management
 - `list_batches` - List all brewing batches
+- `find_batches(name?, status?)` - Search batches by name and/or status
 - `get_batch_detail(batch_id)` - Get detailed batch information
-- `update_batch(batch_id, ...)` - Update batch measurements and status
+- `update_batch(batch_id, ..., clear_fields?)` - Update batch status and measured values (validated); `clear_fields` clears measured values
 - `get_batch_brewtracker(batch_id)` - Get brewing process guidance
 - `get_batch_last_reading(batch_id)` - Get latest sensor readings
 - `get_batch_readings_summary(batch_id)` - Get sensor readings summary
-
-### Inventory Updates
-- `update_fermentable_inventory(item_id, amount)` - Update fermentable stock
-- `update_hop_inventory(item_id, amount)` - Update hop stock  
-- `update_yeast_inventory(item_id, amount)` - Update yeast stock
-- `update_misc_inventory(item_id, amount)` - Update misc item stock
 
 ## Development
 
 ### Running Tests
 ```bash
 uv run pytest
+```
+
+### Checking the write tools against the real API
+
+`scripts/live_check_writes.py` creates one scratch recipe and one scratch hop (both named `ZZ-MCP-SCRATCH ...`) in your account and exercises the write tools on them. The server cannot delete, so remove the two items in the Brewfather app afterwards.
+```bash
+uv run python scripts/live_check_writes.py --yes
 ```
 
 ### Testing the Server Locally
@@ -229,9 +252,11 @@ Point your MCP client at `http://<docker-host>:8010/mcp` with the `MCP_AUTH_TOKE
    - For local development: Ensure your `.env` file exists with valid credentials
    - Verify your Brewfather API credentials are correct and have the necessary permissions
 
-3. **Connection timeouts**: Check your internet connection and Brewfather API status
+3. **Rate limit errors**: Brewfather allows 500 calls per hour per API key. The error message includes the delay to wait. The search tools read up to 10 pages (500 items) of a list, which can cost up to 10 calls each, and they warn when a list was cut at 500 items; prefer them over repeated list calls
 
-4. **Path issues in Claude Desktop**: Ensure you're using absolute paths in the configuration file
+4. **Connection timeouts**: Check your internet connection and Brewfather API status
+
+5. **Path issues in Claude Desktop**: Ensure you're using absolute paths in the configuration file
 
 ### Debug Mode
 

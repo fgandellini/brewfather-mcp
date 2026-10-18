@@ -1,4 +1,6 @@
+from dataclasses import dataclass
 from enum import StrEnum
+import json
 import logging
 import os
 import httpx
@@ -23,11 +25,40 @@ from .types import (
 from .types.brewtracker import BrewTrackerStatus, BatchReadingsList, LastReading
 
 BASE_URL: str = "https://api.brewfather.app/v2"
+LIST_PAGE_SIZE = 50  # API maximum
+LIST_MAX_PAGES = 10  # safety limit; one list call reads at most 500 items
+
+class RateLimitError(Exception):
+    """Raised when Brewfather answers HTTP 429 (500 calls per hour per API key)."""
+
+    def __init__(self, retry_after: str | None = None):
+        self.retry_after = retry_after
+        wait = (
+            f"Retry after {retry_after} seconds."
+            if retry_after
+            else "Please try again later."
+        )
+        super().__init__(
+            f"Brewfather rate limit reached (500 calls per hour per API key). {wait}"
+        )
+
+
+def created_id(response: str) -> str | None:
+    """Read the new item's ID from a create response ({"id": "..."} per the API docs)."""
+    try:
+        body = json.loads(response)
+    except ValueError:
+        return None
+    if not isinstance(body, dict):
+        return None
+    return body.get("id") or body.get("_id")
+
 
 class OrderByDirection(StrEnum):
     ASCENDING = "asc"
     DESCENDING = "desc"
 
+@dataclass
 class ListQueryParams:
     inventory_negative: bool | None = None
     complete: bool | None = None
@@ -36,6 +67,7 @@ class ListQueryParams:
     start_after: str | None = None
     order_by: str | None = None
     order_by_direction: OrderByDirection | None = None
+    status: str | None = None
 
     def as_query_param_str(self) -> str | None:
         params = []
@@ -48,6 +80,9 @@ class ListQueryParams:
 
         if self.inventory_exists is not None:
             params.append(f"inventory_exists={'true' if self.inventory_exists else 'false'}")
+
+        if self.status:
+            params.append(f"status={urllib.parse.quote_plus(self.status)}")
 
         if self.limit:
             params.append(f"limit={self.limit}")
@@ -79,12 +114,17 @@ class BrewfatherClient:
             )
 
         self.auth = httpx.BasicAuth(user_id, api_key)
-        self.max_pages = 10  # Safety limit to prevent infinite loops
+        self.max_pages = LIST_MAX_PAGES
+
+    def _check_response(self, response: httpx.Response) -> None:
+        if response.status_code == 429:
+            raise RateLimitError(response.headers.get("Retry-After"))
+        response.raise_for_status()
 
     async def _make_request(self, url: str) -> str:
         async with httpx.AsyncClient(auth=self.auth) as client:
             response = await client.get(url)
-            response.raise_for_status()
+            self._check_response(response)
             # Write response to a file for debugging when debug mode is enabled
             if os.getenv("BREWFATHER_MCP_DEBUG"):
                 debug_dir = os.path.join(os.path.dirname(__file__), "..", "..", "debug")
@@ -98,12 +138,12 @@ class BrewfatherClient:
     async def _make_patch_request(self, url: str, data: dict) -> None:
         async with httpx.AsyncClient(auth=self.auth) as client:
             response = await client.patch(url, json=data)
-            response.raise_for_status()
+            self._check_response(response)
 
     async def _make_post_request(self, url: str, data: dict) -> str:
         async with httpx.AsyncClient(auth=self.auth) as client:
             response = await client.post(url, json=data)
-            response.raise_for_status()
+            self._check_response(response)
             return response.text
 
     def _build_url(
@@ -147,7 +187,7 @@ class BrewfatherClient:
 
         # Set a reasonable limit per page if not specified
         if not current_params.limit:
-            current_params.limit = 50
+            current_params.limit = LIST_PAGE_SIZE
 
         page_count = 0
         while page_count < self.max_pages:
@@ -199,11 +239,32 @@ class BrewfatherClient:
         json_response = await self._make_request(url)
         return FermentableDetail.model_validate_json(json_response)
 
-    async def update_fermentable_inventory(self, id: str, inventory: float) -> None:
-        url = self._build_url(
-            f"inventory/{InventoryCategory.FERMENTABLES}", id=id
+    async def update_inventory(
+        self, category: InventoryCategory, id: str, data: dict
+    ) -> None:
+        url = self._build_url(f"inventory/{category}", id=id)
+        await self._make_patch_request(url, data)
+
+    async def create_inventory_item(
+        self, category: InventoryCategory, data: dict
+    ) -> str:
+        url = self._build_url(f"inventory/{category}")
+        return await self._make_post_request(url, data)
+
+    async def get_inventory_list(
+        self,
+        category: InventoryCategory,
+        query_params: ListQueryParams | None = None,
+    ) -> FermentableList | HopList | MiscList | YeastList:
+        model_class = {
+            InventoryCategory.FERMENTABLES: FermentableList,
+            InventoryCategory.HOPS: HopList,
+            InventoryCategory.MISCS: MiscList,
+            InventoryCategory.YEASTS: YeastList,
+        }[category]
+        return await self._get_paginated_list(
+            f"inventory/{category}", model_class, query_params
         )
-        await self._make_patch_request(url, {"inventory": inventory})
 
     # Batch endpoints
     async def get_batches_list(
@@ -225,6 +286,12 @@ class BrewfatherClient:
         self, query_params: ListQueryParams | None = None
     ) -> RecipeList:
         return await self._get_paginated_list("recipes", RecipeList, query_params)
+
+    async def create_recipe(self, data: dict) -> str:
+        return await self._make_post_request(self._build_url("recipes"), data)
+
+    async def update_recipe(self, id: str, data: dict) -> None:
+        await self._make_patch_request(self._build_url("recipes", id=id), data)
 
     async def get_recipe_detail(self, id: str) -> RecipeDetail:
         url = self._build_url("recipes", id=id)
@@ -248,12 +315,6 @@ class BrewfatherClient:
         json_response = await self._make_request(url)
         return HopDetail.model_validate_json(json_response)
     
-    async def update_hop_inventory(self, id: str, inventory: float) -> None:
-        url = self._build_url(
-            f"inventory/{InventoryCategory.HOPS}", id=id
-        )
-        await self._make_patch_request(url, {"inventory": inventory})
-
     async def get_yeasts_list(
         self, query_params: ListQueryParams | None = None
     ) -> YeastList:
@@ -270,12 +331,6 @@ class BrewfatherClient:
         json_response = await self._make_request(url)
         return YeastDetail.model_validate_json(json_response)
     
-    async def update_yeast_inventory(self, id: str, inventory: float) -> None:
-        url = self._build_url(
-            f"inventory/{InventoryCategory.YEASTS}", id=id
-        )
-        await self._make_patch_request(url, {"inventory": inventory})
-
     async def get_miscs_list(
         self, query_params: ListQueryParams | None = None
     ) -> MiscList:
@@ -292,12 +347,6 @@ class BrewfatherClient:
         json_response = await self._make_request(url)
         return MiscDetail.model_validate_json(json_response)
     
-    async def update_misc_inventory(self, id: str, inventory: float) -> None:
-        url = self._build_url(
-            f"inventory/{InventoryCategory.MISCS}", id=id
-        )
-        await self._make_patch_request(url, {"inventory": inventory})
-
     # Brewtracker endpoints
     async def get_batch_brewtracker(self, batch_id: str) -> BrewTrackerStatus:
         """Get brewtracker status for a batch"""

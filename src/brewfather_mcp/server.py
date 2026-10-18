@@ -6,7 +6,13 @@ from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.prompts.base import Message
 from mcp.types import TextContent
 
-from brewfather_mcp.api import BrewfatherClient, ListQueryParams
+from brewfather_mcp.api import (
+    LIST_MAX_PAGES,
+    LIST_PAGE_SIZE,
+    BrewfatherClient,
+    ListQueryParams,
+    created_id,
+)
 from brewfather_mcp.inventory import (
     get_fermentables_summary,
     get_hops_summary,
@@ -17,12 +23,20 @@ from brewfather_mcp.types import (
     YeastForm
 )
 from brewfather_mcp.types.yeast import YeastType, Flocculation
+from brewfather_mcp.types.batch import BatchStatus
 from brewfather_mcp.types.recipe import RecipeType
 from brewfather_mcp.types.hop import HopUse, HopForm, HopUsage
 from brewfather_mcp.types.misc import MiscUse, MiscType
 from brewfather_mcp.types.fermentable import FermentableType, FermentableGrainGroup
 from brewfather_mcp.types.base import MashStepType, FermentationStepType
 from brewfather_mcp.formatter import format_recipe_details
+from brewfather_mcp.validation import (
+    parse_inventory_kind,
+    require_number,
+    validate_batch_update,
+    validate_inventory_fields,
+    validate_recipe_payload,
+)
 from typing import Optional
 from datetime import datetime
 
@@ -385,6 +399,45 @@ async def inventory_summary() -> str:
         raise
 
 
+def _format_batch_summary(item) -> str:
+    brew_date_str = (
+        datetime.fromtimestamp(item.brew_date / 1000).strftime("%Y-%m-%d %H:%M:%S")
+        if item.brew_date
+        else "N/A"
+    )
+    return f"""ID: {item.id}
+Name: {item.name}
+Batch Number: {item.batch_no or 'N/A'}
+Status: {item.status or 'N/A'}
+Brewer: {item.brewer or 'N/A'}
+Brew Date: {brew_date_str}
+Recipe Name: {item.recipe_name}
+"""
+
+
+def _format_recipe_summary(item) -> str:
+    return f"""ID: {item.id}
+Name: {item.name}
+Author: {item.author or 'N/A'}
+Style: {item.style.name if item.style else 'N/A'}
+Type: {item.type or 'N/A'}
+"""
+
+
+def _truncation_note(data) -> str:
+    """Warn when a list was cut at the page limit, so 'no match' cannot be trusted."""
+    limit = LIST_PAGE_SIZE * LIST_MAX_PAGES
+    if len(data.root) >= limit:
+        return (
+            f"\nOnly the first {limit} items were searched; results may be incomplete."
+        )
+    return ""
+
+
+def _name_matches(item, name: Optional[str]) -> bool:
+    return not name or name.lower() in (item.name or "").lower()
+
+
 # Batch Endpoints
 @mcp.tool(
     name="list_batches",
@@ -395,27 +448,35 @@ async def read_batches_list() -> str:
     try:
         params = ListQueryParams()
         data = await brewfather_client.get_batches_list(params)
-        formatted_response: list[str] = []
-        for item in data.root:
-            brew_date_str = (
-                datetime.fromtimestamp(item.brew_date / 1000).strftime(
-                    "%Y-%m-%d %H:%M:%S"
-                )
-                if item.brew_date
-                else "N/A"
-            )
-            formatted = f"""ID: {item.id}
-Name: {item.name}
-Batch Number: {item.batch_no or 'N/A'}
-Status: {item.status or 'N/A'}
-Brewer: {item.brewer or 'N/A'}
-Brew Date: {brew_date_str}
-Recipe Name: {item.recipe_name}
-"""
-            formatted_response.append(formatted)
+        formatted_response = [_format_batch_summary(item) for item in data.root]
         return "---\n".join(formatted_response) if formatted_response else "No batches found."
     except Exception:
         logger.exception("Error happened while fetching batches list")
+        raise
+
+
+@mcp.tool(
+    name="find_batches",
+    description=(
+        "Searches batches. name is a case-insensitive part of the batch name; status is one of "
+        "Planning, Brewing, Fermenting, Conditioning, Completed, Archived. Both are optional."
+    ),
+)
+async def find_batches(name: Optional[str] = None, status: Optional[str] = None) -> str:
+    logger.info(f"received request to find batches: name={name!r} status={status!r}")
+    params = ListQueryParams()
+    if status:
+        valid = [s.value for s in BatchStatus]
+        if status not in valid:
+            return f"Invalid request: status must be one of {valid}, got {status!r}"
+        params.status = status
+    try:
+        data = await brewfather_client.get_batches_list(params)
+        found = [_format_batch_summary(i) for i in data.root if _name_matches(i, name)]
+        body = "---\n".join(found) if found else "No batches found."
+        return body + _truncation_note(data)
+    except Exception:
+        logger.exception("Error happened while searching batches")
         raise
 
 
@@ -656,7 +717,11 @@ Tags: {', '.join(item.tags) if item.tags else 'None'}
 
 @mcp.tool(
     name="update_batch",
-    description="Updates a batch's status or measured values.",
+    description=(
+        "Updates a batch's status or measured values. Gravities are SG (0.1-1.9), "
+        "volumes are liters, temperature is Celsius. Pass clear_fields (for example "
+        "['measuredFg']) to clear measured values."
+    ),
 )
 async def update_batch(
     batch_id: str,
@@ -673,38 +738,33 @@ async def update_batch(
     measuredFg: Optional[float] = None,
     measuredBottlingSize: Optional[float] = None,
     carbonationTemp: Optional[float] = None,
+    clear_fields: Optional[list[str]] = None,
 ) -> str:
     logger.info(f"received request to update batch: {batch_id}")
-    update_data = {}
-    if status:
-        update_data["status"] = status
-    if measuredMashPh is not None:
-        update_data["measuredMashPh"] = measuredMashPh
-    if measuredBoilSize is not None:
-        update_data["measuredBoilSize"] = measuredBoilSize
-    if measuredFirstWortGravity is not None:
-        update_data["measuredFirstWortGravity"] = measuredFirstWortGravity
-    if measuredPreBoilGravity is not None:
-        update_data["measuredPreBoilGravity"] = measuredPreBoilGravity
-    if measuredPostBoilGravity is not None:
-        update_data["measuredPostBoilGravity"] = measuredPostBoilGravity
-    if measuredKettleSize is not None:
-        update_data["measuredKettleSize"] = measuredKettleSize
-    if measuredOg is not None:
-        update_data["measuredOg"] = measuredOg
-    if measuredFermenterTopUp is not None:
-        update_data["measuredFermenterTopUp"] = measuredFermenterTopUp
-    if measuredBatchSize is not None:
-        update_data["measuredBatchSize"] = measuredBatchSize
-    if measuredFg is not None:
-        update_data["measuredFg"] = measuredFg
-    if measuredBottlingSize is not None:
-        update_data["measuredBottlingSize"] = measuredBottlingSize
-    if carbonationTemp is not None:
-        update_data["carbonationTemp"] = carbonationTemp
+    values = {
+        "status": status,
+        "measuredMashPh": measuredMashPh,
+        "measuredBoilSize": measuredBoilSize,
+        "measuredFirstWortGravity": measuredFirstWortGravity,
+        "measuredPreBoilGravity": measuredPreBoilGravity,
+        "measuredPostBoilGravity": measuredPostBoilGravity,
+        "measuredKettleSize": measuredKettleSize,
+        "measuredOg": measuredOg,
+        "measuredFermenterTopUp": measuredFermenterTopUp,
+        "measuredBatchSize": measuredBatchSize,
+        "measuredFg": measuredFg,
+        "measuredBottlingSize": measuredBottlingSize,
+        "carbonationTemp": carbonationTemp,
+    }
+    values = {name: value for name, value in values.items() if value is not None}
 
-    if not update_data:
+    if not values and not clear_fields:
         return "No update parameters provided."
+
+    try:
+        update_data = validate_batch_update(values, clear_fields)
+    except ValueError as error:
+        return f"Invalid update: {error}"
 
     try:
         await brewfather_client.update_batch_detail(batch_id, update_data)
@@ -724,18 +784,66 @@ async def read_recipes_list() -> str:
     try:
         params = ListQueryParams()
         data = await brewfather_client.get_recipes_list(params)
-        formatted_response: list[str] = []
-        for item in data.root:
-            formatted = f"""ID: {item.id}
-Name: {item.name}
-Author: {item.author or 'N/A'}
-Style: {item.style.name if item.style else 'N/A'}
-Type: {item.type or 'N/A'}
-"""
-            formatted_response.append(formatted)
+        formatted_response = [_format_recipe_summary(item) for item in data.root]
         return "---\n".join(formatted_response) if formatted_response else "No recipes found."
     except Exception:
         logger.exception("Error happened while fetching recipes list")
+        raise
+
+
+@mcp.tool(
+    name="create_recipe",
+    description=(
+        "Creates a new recipe. fields holds optional recipe properties in metric units "
+        "(liters, kg, grams, Celsius, SG): type (Extract, Partial Mash, All Grain), batchSize, "
+        "boilSize, boilTime, efficiency, notes, fermentables, hops, miscs, yeasts, mash, "
+        "fermentation, ... Calculated values (OG, IBU, color) are not accepted: Brewfather computes them, "
+        "and default equipment and style are added, when the recipe is first opened in the "
+        "Brewfather app (verified live)."
+    ),
+)
+async def create_recipe(name: str, fields: Optional[dict] = None) -> str:
+    logger.info(f"Tool: create_recipe called for {name!r}")
+    try:
+        fields = dict(fields or {})
+        if "name" in fields:
+            raise ValueError("do not put 'name' in fields; use the name parameter")
+        body = validate_recipe_payload({"name": name, **fields}, creating=True)
+    except ValueError as error:
+        return f"Invalid request: {error}"
+
+    try:
+        response = await brewfather_client.create_recipe(body)
+        new_id = created_id(response)
+        return f"Created recipe {name!r}" + (
+            f" with ID {new_id}." if new_id else f". Response: {response}"
+        )
+    except Exception:
+        logger.exception(f"Error creating recipe {name!r}")
+        raise
+
+
+@mcp.tool(
+    name="update_recipe",
+    description=(
+        "Updates a recipe. Only the top-level fields in fields change, and each one replaces "
+        "the stored value completely: an ingredient list (fermentables, hops, miscs, yeasts) "
+        "REPLACES the whole list, so send every ingredient you want to keep. Set a field to "
+        "null to clear it. Metric units. Empty ingredient lists are refused."
+    ),
+)
+async def update_recipe(recipe_id: str, fields: dict) -> str:
+    logger.info(f"Tool: update_recipe called for {recipe_id}")
+    try:
+        body = validate_recipe_payload(fields, creating=False)
+    except ValueError as error:
+        return f"Invalid request: {error}"
+
+    try:
+        await brewfather_client.update_recipe(recipe_id, body)
+        return f"Updated recipe {recipe_id}: {sorted(body)}."
+    except Exception:
+        logger.exception(f"Error updating recipe {recipe_id}")
         raise
 
 
@@ -805,58 +913,157 @@ Notes: {item.notes or 'N/A'}
 
 # Inventory Update Tools
 @mcp.tool(
-    name="update_fermentable_inventory",
-    description="Sets the inventory amount for a specific fermentable.",
+    name="set_inventory",
+    description=(
+        "Changes the stock of an inventory item. kind is one of fermentables, hops, miscs, "
+        "yeasts. Give either amount (sets the new total) or adjust (adds a positive or "
+        "subtracts a negative quantity), not both. Units: kg for fermentables, grams for "
+        "hops, the item's own unit for yeasts and miscs."
+    ),
 )
-async def update_fermentable_inventory_tool(item_id: str, inventory_amount: float) -> str:
-    logger.info(f"Tool: update_fermentable_inventory_tool called for item {item_id} with amount {inventory_amount}")
+async def set_inventory(
+    kind: str,
+    item_id: str,
+    amount: Optional[float] = None,
+    adjust: Optional[float] = None,
+) -> str:
+    logger.info(f"Tool: set_inventory called for {kind} {item_id}")
     try:
-        await brewfather_client.update_fermentable_inventory(item_id, inventory_amount)
-        return f"Fermentable inventory for item {item_id} updated to {inventory_amount} kg."
+        category = parse_inventory_kind(kind)
+        if (amount is None) == (adjust is None):
+            raise ValueError("give exactly one of amount or adjust")
+        if amount is not None:
+            body = {"inventory": require_number("amount", amount)}
+            summary = f"set to {amount}"
+        else:
+            body = {"inventory_adjust": require_number("adjust", adjust)}
+            summary = f"adjusted by {adjust}"
+    except ValueError as error:
+        return f"Invalid request: {error}"
+
+    try:
+        await brewfather_client.update_inventory(category, item_id, body)
+        return f"Inventory of {category} item {item_id} {summary}."
     except Exception:
-        logger.exception(f"Error updating fermentable inventory for item {item_id}")
+        logger.exception(f"Error updating {kind} inventory for item {item_id}")
         raise
 
 
 @mcp.tool(
-    name="update_hop_inventory",
-    description="Sets the inventory amount for a specific hop.",
+    name="find_recipes",
+    description="Searches recipes by a case-insensitive part of the recipe name.",
 )
-async def update_hop_inventory_tool(item_id: str, inventory_amount: float) -> str:
-    logger.info(f"Tool: update_hop_inventory_tool called for item {item_id} with amount {inventory_amount}")
+async def find_recipes(name: Optional[str] = None) -> str:
+    logger.info(f"received request to find recipes: name={name!r}")
     try:
-        await brewfather_client.update_hop_inventory(item_id, inventory_amount)
-        return f"Hop inventory for item {item_id} updated to {inventory_amount} grams."
+        data = await brewfather_client.get_recipes_list(ListQueryParams())
+        found = [_format_recipe_summary(i) for i in data.root if _name_matches(i, name)]
+        body = "---\n".join(found) if found else "No recipes found."
+        return body + _truncation_note(data)
     except Exception:
-        logger.exception(f"Error updating hop inventory for item {item_id}")
+        logger.exception("Error happened while searching recipes")
         raise
 
 
 @mcp.tool(
-    name="update_misc_inventory",
-    description="Sets the inventory amount for a specific miscellaneous item.",
+    name="list_inventory",
+    description=(
+        "Lists inventory items of one kind (fermentables, hops, miscs, yeasts) as "
+        "'ID | name | stock'. Optional name filter (case-insensitive part of the name) "
+        "and in_stock_only to hide items with no stock."
+    ),
 )
-async def update_misc_inventory_tool(item_id: str, inventory_amount: float) -> str:
-    logger.info(f"Tool: update_misc_inventory_tool called for item {item_id} with amount {inventory_amount}")
+async def list_inventory(
+    kind: str, name: Optional[str] = None, in_stock_only: bool = False
+) -> str:
+    logger.info(f"received request to list {kind} inventory")
     try:
-        await brewfather_client.update_misc_inventory(item_id, inventory_amount)
-        return f"Miscellaneous inventory for item {item_id} updated to {inventory_amount} units."
+        category = parse_inventory_kind(kind)
+    except ValueError as error:
+        return f"Invalid request: {error}"
+    params = ListQueryParams()
+    if in_stock_only:
+        params.inventory_exists = True
+    try:
+        data = await brewfather_client.get_inventory_list(category, params)
+        lines = [
+            f"{i.id} | {i.name} | {i.inventory}"
+            for i in data.root
+            if _name_matches(i, name)
+        ]
+        body = "\n".join(lines) if lines else f"No {category} found."
+        return body + _truncation_note(data)
     except Exception:
-        logger.exception(f"Error updating miscellaneous inventory for item {item_id}")
+        logger.exception(f"Error happened while listing {kind} inventory")
         raise
 
 
 @mcp.tool(
-    name="update_yeast_inventory",
-    description="Sets the inventory amount for a specific yeast.",
+    name="create_inventory_item",
+    description=(
+        "Creates a new inventory item. kind is one of fermentables, hops, miscs, yeasts. "
+        "fields holds optional item properties (metric units, for example alpha for hops, "
+        "attenuation for yeasts); amount is the starting stock. Use set_inventory later "
+        "to change stock."
+    ),
 )
-async def update_yeast_inventory_tool(item_id: str, inventory_amount: float) -> str:
-    logger.info(f"Tool: update_yeast_inventory_tool called for item {item_id} with amount {inventory_amount}")
+async def create_inventory_item(
+    kind: str,
+    name: str,
+    fields: Optional[dict] = None,
+    amount: Optional[float] = None,
+) -> str:
+    logger.info(f"Tool: create_inventory_item called for {kind} {name!r}")
     try:
-        await brewfather_client.update_yeast_inventory(item_id, inventory_amount)
-        return f"Yeast inventory for item {item_id} updated to {inventory_amount} packets."
+        category = parse_inventory_kind(kind)
+        fields = dict(fields or {})
+        for reserved in ("name", "inventory"):
+            if reserved in fields:
+                raise ValueError(
+                    f"do not put {reserved!r} in fields; use the "
+                    f"{'name' if reserved == 'name' else 'amount'} parameter"
+                )
+        body = {"name": name, **fields}
+        if amount is not None:
+            body["inventory"] = require_number("amount", amount)
+        validate_inventory_fields(category, {k: v for k, v in body.items() if k != "inventory"})
+    except ValueError as error:
+        return f"Invalid request: {error}"
+
+    try:
+        response = await brewfather_client.create_inventory_item(category, body)
+        new_id = created_id(response)
+        return f"Created {category} item {name!r}" + (
+            f" with ID {new_id}." if new_id else f". Response: {response}"
+        )
     except Exception:
-        logger.exception(f"Error updating yeast inventory for item {item_id}")
+        logger.exception(f"Error creating {kind} inventory item {name!r}")
+        raise
+
+
+@mcp.tool(
+    name="update_inventory_item",
+    description=(
+        "Updates properties of an inventory item (for example name, alpha, supplier). "
+        "Only the given fields change; set a field to null to clear it. This tool cannot "
+        "change stock: use set_inventory for that."
+    ),
+)
+async def update_inventory_item(kind: str, item_id: str, fields: dict) -> str:
+    logger.info(f"Tool: update_inventory_item called for {kind} {item_id}")
+    try:
+        category = parse_inventory_kind(kind)
+        if "inventory" in fields or "inventory_adjust" in fields:
+            raise ValueError("stock cannot be changed here; use set_inventory")
+        body = validate_inventory_fields(category, fields)
+    except ValueError as error:
+        return f"Invalid request: {error}"
+
+    try:
+        await brewfather_client.update_inventory(category, item_id, body)
+        return f"Updated {category} item {item_id}: {sorted(body)}."
+    except Exception:
+        logger.exception(f"Error updating {kind} inventory item {item_id}")
         raise
 
 

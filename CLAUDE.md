@@ -46,7 +46,7 @@ For testing the HTTP server or deployment to cloud platforms:
 - `mcpt call list_inventory_categories http://localhost:8000/sse` - Call a simple tool
 - `mcpt call inventory_summary http://localhost:8000/sse` - Call a complex tool
 - `mcpt call get_fermentable_detail --params '{"identifier": "default-08f456e"}' http://localhost:8000/sse` - Call tool with parameters
-- `mcpt call update_fermentable_inventory --params '{"item_id": "default-08f456e", "inventory_amount": 5.0}' http://localhost:8000/sse` - Call update tool
+- `mcpt call set_inventory --params '{"kind": "fermentables", "item_id": "default-08f456e", "amount": 5.0}' http://localhost:8000/sse` - Call update tool
 
 **Health Check:**
 - `curl http://localhost:8000/sse` - Check if SSE endpoint is responding (will hang waiting for events, which is expected)
@@ -105,6 +105,11 @@ The HTTP server can be deployed to any cloud platform that supports Python web a
 - Handles complex nested structures (recipes, water profiles, fermentation schedules)
 - `base.py` contains shared types (MashStepType, FermentationStepType, etc)
 
+**Validation (`src/brewfather_mcp/validation.py`)**
+- Field allowlists, enums and ranges for every write (batches, inventory items, recipes). The API silently accepts unknown fields, so tools validate first and return `Invalid request: ...` without calling the API
+- `RateLimitError` in `api.py` is raised on HTTP 429 (500 calls/hour per key) and carries the `Retry-After` value
+- Never add delete tools, and never grant `*.delete` scopes to the API key
+
 **Inventory Utilities (`src/brewfather_mcp/inventory.py`)**
 - Helper functions for creating inventory summaries
 - Used by the `inventory_summary` MCP tool
@@ -128,13 +133,14 @@ When developing, use `.env` file
 - VCR cassettes stored in `tests/cassettes/`
 - Test configuration in `tests/conftest.py` includes auth header filtering
 - Coverage configuration excludes test files
+- `scripts/live_check_writes.py --yes` exercises the write tools on scratch items in the real account (delete them in the app afterwards)
 
 ### Key MCP Tools
 
 The server exposes these main tool categories:
-- **Inventory**: List/detail/update for fermentables, hops, yeasts, misc items
-- **Recipes**: List and detailed recipe information including ingredients and process
-- **Batches**: List, detail, and update brewing batches with measured values
+- **Inventory**: List/detail/search for fermentables, hops, yeasts, misc items; `set_inventory` (absolute or relative stock), `create_inventory_item`, `update_inventory_item`
+- **Recipes**: List, search, detail, `create_recipe`, `update_recipe` (shallow merge: ingredient lists replace the whole list)
+- **Batches**: List, search, detail, and update brewing batches with measured values (batches cannot be created through the API)
 - **Summaries**: Combined inventory overviews and brewing style suggestions
 
 ### Code Patterns
