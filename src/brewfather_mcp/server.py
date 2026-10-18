@@ -18,6 +18,7 @@ from brewfather_mcp.types import (
     YeastForm
 )
 from brewfather_mcp.types.yeast import YeastType, Flocculation
+from brewfather_mcp.types.batch import BatchStatus
 from brewfather_mcp.types.recipe import RecipeType
 from brewfather_mcp.types.hop import HopUse, HopForm, HopUsage
 from brewfather_mcp.types.misc import MiscUse, MiscType
@@ -392,6 +393,35 @@ async def inventory_summary() -> str:
         raise
 
 
+def _format_batch_summary(item) -> str:
+    brew_date_str = (
+        datetime.fromtimestamp(item.brew_date / 1000).strftime("%Y-%m-%d %H:%M:%S")
+        if item.brew_date
+        else "N/A"
+    )
+    return f"""ID: {item.id}
+Name: {item.name}
+Batch Number: {item.batch_no or 'N/A'}
+Status: {item.status or 'N/A'}
+Brewer: {item.brewer or 'N/A'}
+Brew Date: {brew_date_str}
+Recipe Name: {item.recipe_name}
+"""
+
+
+def _format_recipe_summary(item) -> str:
+    return f"""ID: {item.id}
+Name: {item.name}
+Author: {item.author or 'N/A'}
+Style: {item.style.name if item.style else 'N/A'}
+Type: {item.type or 'N/A'}
+"""
+
+
+def _name_matches(item, name: Optional[str]) -> bool:
+    return not name or name.lower() in (item.name or "").lower()
+
+
 # Batch Endpoints
 @mcp.tool(
     name="list_batches",
@@ -402,27 +432,34 @@ async def read_batches_list() -> str:
     try:
         params = ListQueryParams()
         data = await brewfather_client.get_batches_list(params)
-        formatted_response: list[str] = []
-        for item in data.root:
-            brew_date_str = (
-                datetime.fromtimestamp(item.brew_date / 1000).strftime(
-                    "%Y-%m-%d %H:%M:%S"
-                )
-                if item.brew_date
-                else "N/A"
-            )
-            formatted = f"""ID: {item.id}
-Name: {item.name}
-Batch Number: {item.batch_no or 'N/A'}
-Status: {item.status or 'N/A'}
-Brewer: {item.brewer or 'N/A'}
-Brew Date: {brew_date_str}
-Recipe Name: {item.recipe_name}
-"""
-            formatted_response.append(formatted)
+        formatted_response = [_format_batch_summary(item) for item in data.root]
         return "---\n".join(formatted_response) if formatted_response else "No batches found."
     except Exception:
         logger.exception("Error happened while fetching batches list")
+        raise
+
+
+@mcp.tool(
+    name="find_batches",
+    description=(
+        "Searches batches. name is a case-insensitive part of the batch name; status is one of "
+        "Planning, Brewing, Fermenting, Conditioning, Completed, Archived. Both are optional."
+    ),
+)
+async def find_batches(name: Optional[str] = None, status: Optional[str] = None) -> str:
+    logger.info(f"received request to find batches: name={name!r} status={status!r}")
+    params = ListQueryParams()
+    if status:
+        valid = [s.value for s in BatchStatus]
+        if status not in valid:
+            return f"Invalid request: status must be one of {valid}, got {status!r}"
+        params.status = status
+    try:
+        data = await brewfather_client.get_batches_list(params)
+        found = [_format_batch_summary(i) for i in data.root if _name_matches(i, name)]
+        return "---\n".join(found) if found else "No batches found."
+    except Exception:
+        logger.exception("Error happened while searching batches")
         raise
 
 
@@ -730,15 +767,7 @@ async def read_recipes_list() -> str:
     try:
         params = ListQueryParams()
         data = await brewfather_client.get_recipes_list(params)
-        formatted_response: list[str] = []
-        for item in data.root:
-            formatted = f"""ID: {item.id}
-Name: {item.name}
-Author: {item.author or 'N/A'}
-Style: {item.style.name if item.style else 'N/A'}
-Type: {item.type or 'N/A'}
-"""
-            formatted_response.append(formatted)
+        formatted_response = [_format_recipe_summary(item) for item in data.root]
         return "---\n".join(formatted_response) if formatted_response else "No recipes found."
     except Exception:
         logger.exception("Error happened while fetching recipes list")
@@ -844,6 +873,53 @@ async def set_inventory(
         return f"Inventory of {category} item {item_id} {summary}."
     except Exception:
         logger.exception(f"Error updating {kind} inventory for item {item_id}")
+        raise
+
+
+@mcp.tool(
+    name="find_recipes",
+    description="Searches recipes by a case-insensitive part of the recipe name.",
+)
+async def find_recipes(name: Optional[str] = None) -> str:
+    logger.info(f"received request to find recipes: name={name!r}")
+    try:
+        data = await brewfather_client.get_recipes_list(ListQueryParams())
+        found = [_format_recipe_summary(i) for i in data.root if _name_matches(i, name)]
+        return "---\n".join(found) if found else "No recipes found."
+    except Exception:
+        logger.exception("Error happened while searching recipes")
+        raise
+
+
+@mcp.tool(
+    name="list_inventory",
+    description=(
+        "Lists inventory items of one kind (fermentables, hops, miscs, yeasts) as "
+        "'ID | name | stock'. Optional name filter (case-insensitive part of the name) "
+        "and in_stock_only to hide items with no stock."
+    ),
+)
+async def list_inventory(
+    kind: str, name: Optional[str] = None, in_stock_only: bool = False
+) -> str:
+    logger.info(f"received request to list {kind} inventory")
+    try:
+        category = parse_inventory_kind(kind)
+    except ValueError as error:
+        return f"Invalid request: {error}"
+    params = ListQueryParams()
+    if in_stock_only:
+        params.inventory_exists = True
+    try:
+        data = await brewfather_client.get_inventory_list(category, params)
+        lines = [
+            f"{i.id} | {i.name} | {i.inventory}"
+            for i in data.root
+            if _name_matches(i, name)
+        ]
+        return "\n".join(lines) if lines else f"No {category} found."
+    except Exception:
+        logger.exception(f"Error happened while listing {kind} inventory")
         raise
 
 

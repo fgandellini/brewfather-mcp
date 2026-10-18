@@ -23,6 +23,9 @@ from brewfather_mcp.server import (
     set_inventory,
     create_inventory_item,
     update_inventory_item,
+    find_batches,
+    find_recipes,
+    list_inventory,
 )
 from brewfather_mcp.api import BrewfatherClient
 from brewfather_mcp.types import (
@@ -627,3 +630,94 @@ class TestBrewfatherMCP:
             mock_brewfather_client.update_inventory.assert_not_called()
             assert result.startswith("Invalid request:")
             assert "set_inventory" in result
+
+    # --- search tools ---
+
+    @staticmethod
+    def _items(model_list, names, **attrs):
+        items = []
+        for index, name in enumerate(names):
+            item = MagicMock()
+            item.id = f"id{index}"
+            item.name = name
+            for key, value in attrs.items():
+                setattr(item, key, value)
+            items.append(item)
+        model_list.root = items
+        return model_list
+
+    def _with_batches(self, client, names):
+        batches = self._items(
+            MagicMock(spec=BatchList), names,
+            status="Fermenting", batch_no=1, brewer="me", brew_date=None, recipe_name="R",
+        )
+        client.get_batches_list.return_value = batches
+
+    @pytest.mark.asyncio
+    async def test_find_batches_by_name_case_insensitive(self, mock_brewfather_client):
+        self._with_batches(mock_brewfather_client, ["IPA #1", "ipa #2", "Stout"])
+        with patch("brewfather_mcp.server.brewfather_client", mock_brewfather_client):
+            result = await find_batches(name="IPA")
+            assert "IPA #1" in result and "ipa #2" in result
+            assert "Stout" not in result
+
+    @pytest.mark.asyncio
+    async def test_find_batches_no_match(self, mock_brewfather_client):
+        self._with_batches(mock_brewfather_client, ["Stout"])
+        with patch("brewfather_mcp.server.brewfather_client", mock_brewfather_client):
+            assert await find_batches(name="IPA") == "No batches found."
+
+    @pytest.mark.asyncio
+    async def test_find_batches_invalid_status(self, mock_brewfather_client):
+        with patch("brewfather_mcp.server.brewfather_client", mock_brewfather_client):
+            result = await find_batches(status="Done")
+            mock_brewfather_client.get_batches_list.assert_not_called()
+            assert result.startswith("Invalid request:")
+
+    @pytest.mark.asyncio
+    async def test_find_batches_status_sent(self, mock_brewfather_client):
+        self._with_batches(mock_brewfather_client, ["Stout"])
+        with patch("brewfather_mcp.server.brewfather_client", mock_brewfather_client):
+            await find_batches(status="Fermenting")
+            params = mock_brewfather_client.get_batches_list.call_args.args[0]
+            assert params.status == "Fermenting"
+
+    @pytest.mark.asyncio
+    async def test_find_recipes_by_name(self, mock_brewfather_client):
+        recipes = self._items(
+            MagicMock(spec=RecipeList), ["Pale Ale", "Porter"],
+            author="me", style=None, type="All Grain",
+        )
+        mock_brewfather_client.get_recipes_list.return_value = recipes
+        with patch("brewfather_mcp.server.brewfather_client", mock_brewfather_client):
+            result = await find_recipes(name="pale")
+            assert "Pale Ale" in result and "Porter" not in result
+            assert await find_recipes(name="zzz") == "No recipes found."
+
+    @pytest.mark.asyncio
+    async def test_list_inventory_in_stock_only(self, mock_brewfather_client):
+        mock_brewfather_client.get_inventory_list.return_value = self._items(
+            MagicMock(spec=HopList), ["Citra"], inventory=100.0
+        )
+        with patch("brewfather_mcp.server.brewfather_client", mock_brewfather_client):
+            result = await list_inventory(kind="hops", in_stock_only=True)
+            category, params = mock_brewfather_client.get_inventory_list.call_args.args
+            assert category == InventoryCategory.HOPS
+            assert params.inventory_exists is True
+            assert result == "id0 | Citra | 100.0"
+
+    @pytest.mark.asyncio
+    async def test_list_inventory_name_filter(self, mock_brewfather_client):
+        mock_brewfather_client.get_inventory_list.return_value = self._items(
+            MagicMock(spec=HopList), ["Citra", "Saaz"], inventory=1.0
+        )
+        with patch("brewfather_mcp.server.brewfather_client", mock_brewfather_client):
+            result = await list_inventory(kind="hops", name="SAAZ")
+            assert "Saaz" in result and "Citra" not in result
+            assert await list_inventory(kind="hops", name="zzz") == "No hops found."
+
+    @pytest.mark.asyncio
+    async def test_list_inventory_unknown_kind(self, mock_brewfather_client):
+        with patch("brewfather_mcp.server.brewfather_client", mock_brewfather_client):
+            result = await list_inventory(kind="grains")
+            assert result.startswith("Invalid request:")

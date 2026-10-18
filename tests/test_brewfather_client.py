@@ -180,6 +180,33 @@ async def test_create_inventory_item_post(
     assert json.loads(result) == {"_id": "new1"}
 
 
+def test_query_params_status():
+    params = ListQueryParams(status="Fermenting")
+    assert "status=Fermenting" in params.as_query_param_str()
+
+
+@pytest.mark.asyncio
+async def test_get_inventory_list_hops(client: BrewfatherClient, respx_mock: MockRouter):
+    respx_mock.get(f"{BASE_URL}/inventory/hops").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {
+                    "_id": "h1",
+                    "name": "Citra",
+                    "alpha": 12.0,
+                    "inventory": 100,
+                    "type": "Pellet",
+                    "use": "Boil",
+                }
+            ],
+        )
+    )
+    result = await client.get_inventory_list(InventoryCategory.HOPS)
+    assert isinstance(result, HopList)
+    assert [item.id for item in result.root] == ["h1"]
+
+
 class TestFermentables:
     @pytest.mark.asyncio
     async def test_get_fermentables_list(

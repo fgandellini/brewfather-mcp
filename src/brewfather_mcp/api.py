@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from enum import StrEnum
 import logging
 import os
@@ -43,6 +44,7 @@ class OrderByDirection(StrEnum):
     ASCENDING = "asc"
     DESCENDING = "desc"
 
+@dataclass
 class ListQueryParams:
     inventory_negative: bool | None = None
     complete: bool | None = None
@@ -51,6 +53,7 @@ class ListQueryParams:
     start_after: str | None = None
     order_by: str | None = None
     order_by_direction: OrderByDirection | None = None
+    status: str | None = None
 
     def as_query_param_str(self) -> str | None:
         params = []
@@ -63,6 +66,9 @@ class ListQueryParams:
 
         if self.inventory_exists is not None:
             params.append(f"inventory_exists={'true' if self.inventory_exists else 'false'}")
+
+        if self.status:
+            params.append(f"status={urllib.parse.quote_plus(self.status)}")
 
         if self.limit:
             params.append(f"limit={self.limit}")
@@ -230,6 +236,21 @@ class BrewfatherClient:
     ) -> str:
         url = self._build_url(f"inventory/{category}")
         return await self._make_post_request(url, data)
+
+    async def get_inventory_list(
+        self,
+        category: InventoryCategory,
+        query_params: ListQueryParams | None = None,
+    ) -> FermentableList | HopList | MiscList | YeastList:
+        model_class = {
+            InventoryCategory.FERMENTABLES: FermentableList,
+            InventoryCategory.HOPS: HopList,
+            InventoryCategory.MISCS: MiscList,
+            InventoryCategory.YEASTS: YeastList,
+        }[category]
+        return await self._get_paginated_list(
+            f"inventory/{category}", model_class, query_params
+        )
 
     # Batch endpoints
     async def get_batches_list(
