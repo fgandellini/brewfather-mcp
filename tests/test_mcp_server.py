@@ -21,6 +21,8 @@ from brewfather_mcp.server import (
     read_miscs_list,
     read_misc_detail,
     set_inventory,
+    create_inventory_item,
+    update_inventory_item,
 )
 from brewfather_mcp.api import BrewfatherClient
 from brewfather_mcp.types import (
@@ -568,3 +570,60 @@ class TestBrewfatherMCP:
             result = await set_inventory(**kwargs)
             mock_brewfather_client.update_inventory.assert_not_called()
             assert result.startswith("Invalid request:")
+
+    # --- create / update inventory items ---
+
+    @pytest.mark.asyncio
+    async def test_create_inventory_item(self, mock_brewfather_client):
+        mock_brewfather_client.create_inventory_item.return_value = '{"_id": "new1"}'
+        with patch("brewfather_mcp.server.brewfather_client", mock_brewfather_client):
+            result = await create_inventory_item(
+                kind="hops", name="Citra", fields={"alpha": 12.0}, amount=100.0
+            )
+            mock_brewfather_client.create_inventory_item.assert_called_once_with(
+                InventoryCategory.HOPS,
+                {"name": "Citra", "alpha": 12.0, "inventory": 100.0},
+            )
+            assert "new1" in result
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "kwargs",
+        [
+            {"kind": "hops", "name": "Citra", "fields": {"alphaa": 1}},
+            {"kind": "grains", "name": "Citra"},
+            {"kind": "hops", "name": ""},
+            {"kind": "hops", "name": "Citra", "fields": {"inventory": 5}},
+            {"kind": "hops", "name": "Citra", "fields": {"name": "Other"}},
+            {"kind": "hops", "name": "Citra", "amount": float("nan")},
+        ],
+    )
+    async def test_create_inventory_item_invalid(self, mock_brewfather_client, kwargs):
+        with patch("brewfather_mcp.server.brewfather_client", mock_brewfather_client):
+            result = await create_inventory_item(**kwargs)
+            mock_brewfather_client.create_inventory_item.assert_not_called()
+            assert result.startswith("Invalid request:")
+
+    @pytest.mark.asyncio
+    async def test_update_inventory_item(self, mock_brewfather_client):
+        with patch("brewfather_mcp.server.brewfather_client", mock_brewfather_client):
+            result = await update_inventory_item(
+                kind="hops", item_id="h1", fields={"alpha": 11.5}
+            )
+            mock_brewfather_client.update_inventory.assert_called_once_with(
+                InventoryCategory.HOPS, "h1", {"alpha": 11.5}
+            )
+            assert "h1" in result
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("stock_field", ["inventory", "inventory_adjust"])
+    async def test_update_inventory_item_rejects_stock_fields(
+        self, mock_brewfather_client, stock_field
+    ):
+        with patch("brewfather_mcp.server.brewfather_client", mock_brewfather_client):
+            result = await update_inventory_item(
+                kind="hops", item_id="h1", fields={stock_field: 5}
+            )
+            mock_brewfather_client.update_inventory.assert_not_called()
+            assert result.startswith("Invalid request:")
+            assert "set_inventory" in result

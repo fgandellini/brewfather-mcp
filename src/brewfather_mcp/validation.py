@@ -93,3 +93,146 @@ def validate_batch_update(
     if not body:
         raise ValueError("no update parameters provided")
     return body
+
+
+# --- Inventory items -------------------------------------------------------
+# Field names and enum values come from https://docs.brewfather.app/api/types.md
+# and https://docs.brewfather.app/api/enums.md. Stock is not writable here (use
+# `inventory`/`inventory_adjust` through set_inventory), and neither are the
+# recipe-only quantities (amount, percentage, ibu) or server-managed fields.
+
+_STR = "str"
+_NUM = "num"
+_BOOL = "bool"
+_OBJ = "obj"
+
+_TIME_UNITS = {"min", "day", "days"}
+_ADDITION_USES = {
+    "Boil", "Mash", "Steep", "Primary", "Secondary", "Bottling", "Sparge", "Flameout",
+}
+
+INVENTORY_FIELDS: dict[InventoryCategory, dict[str, object]] = {
+    InventoryCategory.FERMENTABLES: {
+        "name": _STR,
+        "type": {"Grain", "Sugar", "Liquid Extract", "Dry Extract", "Adjunct", "Other"},
+        "grainCategory": _STR,
+        "color": _NUM,
+        "lovibond": _NUM,
+        "use": _ADDITION_USES,
+        "time": _NUM,
+        "timeUnit": _TIME_UNITS,
+        "origin": _STR,
+        "supplier": _STR,
+        "potential": _NUM,
+        "moisture": _NUM,
+        "diastaticPower": _NUM,
+        "protein": _NUM,
+        "attenuation": _NUM,
+        "notFermentable": _BOOL,
+        "costPerAmount": _NUM,
+        "notes": _STR,
+        "hidden": _BOOL,
+    },
+    InventoryCategory.HOPS: {
+        "name": _STR,
+        "alpha": _NUM,
+        "use": {"Boil", "Dry Hop", "Mash", "First Wort", "Aroma"},
+        "time": _NUM,
+        "timeUnit": _TIME_UNITS,
+        "type": {"Pellet", "Whole", "Cryo", "Plug", "ISOExtract", "CO2Extract"},
+        "beta": _NUM,
+        "hsi": _NUM,
+        "origin": _STR,
+        "usage": {"Aroma", "Bittering", "Both"},
+        "temp": _NUM,
+        "year": _NUM,
+        "oil": _NUM,
+        "myrcene": _NUM,
+        "humulene": _NUM,
+        "caryophyllene": _NUM,
+        "farnesene": _NUM,
+        "geraniol": _NUM,
+        "linalool": _NUM,
+        "aroma": _OBJ,
+        "costPerAmount": _NUM,
+        "notes": _STR,
+        "hidden": _BOOL,
+    },
+    InventoryCategory.YEASTS: {
+        "name": _STR,
+        "type": {"Ale", "Lager", "Hybrid", "Wheat", "Wine", "Champagne", "Other"},
+        "form": {"Dry", "Liquid", "Slant", "Culture", "Slurry"},
+        "unit": {"g", "ml", "pkg", "billion cells", "oz"},
+        "laboratory": _STR,
+        "productId": _STR,
+        "flocculation": {"Low", "Medium-Low", "Medium", "Medium-High", "High", "Very High"},
+        "attenuation": _NUM,
+        "minAttenuation": _NUM,
+        "maxAttenuation": _NUM,
+        "minTemp": _NUM,
+        "maxTemp": _NUM,
+        "maxAbv": _NUM,
+        "notes": _STR,
+        "bestFor": _STR,
+        "starter": _BOOL,
+        "starterSize": _NUM,
+        "costPerAmount": _NUM,
+        "hidden": _BOOL,
+    },
+    InventoryCategory.MISCS: {
+        "name": _STR,
+        "type": {"Spice", "Fining", "Water Agent", "Herb", "Flavor", "Other"},
+        "use": _ADDITION_USES,
+        "time": _NUM,
+        "timeUnit": _TIME_UNITS,
+        "unit": {
+            "g", "mg", "kg", "oz", "lb", "ml", "l", "tsp", "tbsp", "cup", "pkg",
+            "items", "drops", "pt", "qt", "gal",
+        },
+        "amountPerL": _NUM,
+        "concentration": _NUM,
+        "waterAdjustment": _BOOL,
+        "costPerAmount": _NUM,
+        "notes": _STR,
+        "hidden": _BOOL,
+    },
+}
+
+
+def validate_inventory_fields(
+    category: InventoryCategory, fields: dict[str, object]
+) -> dict[str, object]:
+    """Validate the fields of an inventory item create or partial update.
+
+    A value of None is allowed for every field except name; the API clears the field.
+    """
+    spec = INVENTORY_FIELDS[category]
+    if not fields:
+        raise ValueError("no fields provided")
+
+    unknown = sorted(set(fields) - set(spec))
+    if unknown:
+        raise ValueError(
+            f"unknown {category} field(s) {unknown}; allowed: {sorted(spec)}"
+        )
+
+    for name, value in fields.items():
+        if value is None:
+            if name == "name":
+                raise ValueError("name cannot be empty")
+            continue
+        rule = spec[name]
+        if rule == _STR:
+            if not isinstance(value, str) or (name == "name" and not value.strip()):
+                raise ValueError(f"{name} must be a non-empty text, got {value!r}")
+        elif rule == _NUM:
+            require_number(name, value)
+        elif rule == _BOOL:
+            if not isinstance(value, bool):
+                raise ValueError(f"{name} must be true or false, got {value!r}")
+        elif rule == _OBJ:
+            if not isinstance(value, dict):
+                raise ValueError(f"{name} must be an object, got {value!r}")
+        elif value not in rule:
+            raise ValueError(f"{name} must be one of {sorted(rule)}, got {value!r}")
+    return dict(fields)

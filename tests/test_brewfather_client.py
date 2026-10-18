@@ -165,6 +165,21 @@ async def test_update_inventory_patch(
     assert json.loads(request.content) == body
 
 
+@pytest.mark.asyncio
+async def test_create_inventory_item_post(
+    client: BrewfatherClient, respx_mock: MockRouter
+):
+    data = {"name": "Citra", "alpha": 12.0, "inventory": 100}
+    respx_mock.post(f"{BASE_URL}/inventory/hops").mock(
+        return_value=httpx.Response(200, json={"_id": "new1"})
+    )
+    result = await client.create_inventory_item(InventoryCategory.HOPS, data)
+    request = respx_mock.calls.last.request
+    assert request.method == "POST"
+    assert json.loads(request.content) == data
+    assert json.loads(result) == {"_id": "new1"}
+
+
 class TestFermentables:
     @pytest.mark.asyncio
     async def test_get_fermentables_list(

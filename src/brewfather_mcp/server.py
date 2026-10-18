@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 
 from dotenv import load_dotenv
@@ -27,6 +28,7 @@ from brewfather_mcp.validation import (
     parse_inventory_kind,
     require_number,
     validate_batch_update,
+    validate_inventory_fields,
 )
 from typing import Optional
 from datetime import datetime
@@ -842,6 +844,78 @@ async def set_inventory(
         return f"Inventory of {category} item {item_id} {summary}."
     except Exception:
         logger.exception(f"Error updating {kind} inventory for item {item_id}")
+        raise
+
+
+@mcp.tool(
+    name="create_inventory_item",
+    description=(
+        "Creates a new inventory item. kind is one of fermentables, hops, miscs, yeasts. "
+        "fields holds optional item properties (metric units, for example alpha for hops, "
+        "attenuation for yeasts); amount is the starting stock. Use set_inventory later "
+        "to change stock."
+    ),
+)
+async def create_inventory_item(
+    kind: str,
+    name: str,
+    fields: Optional[dict] = None,
+    amount: Optional[float] = None,
+) -> str:
+    logger.info(f"Tool: create_inventory_item called for {kind} {name!r}")
+    try:
+        category = parse_inventory_kind(kind)
+        fields = dict(fields or {})
+        for reserved in ("name", "inventory"):
+            if reserved in fields:
+                raise ValueError(
+                    f"do not put {reserved!r} in fields; use the "
+                    f"{'name' if reserved == 'name' else 'amount'} parameter"
+                )
+        body = {"name": name, **fields}
+        if amount is not None:
+            body["inventory"] = require_number("amount", amount)
+        validate_inventory_fields(category, {k: v for k, v in body.items() if k != "inventory"})
+    except ValueError as error:
+        return f"Invalid request: {error}"
+
+    try:
+        response = await brewfather_client.create_inventory_item(category, body)
+        try:
+            new_id = json.loads(response).get("_id")
+        except (ValueError, AttributeError):
+            new_id = None
+        return f"Created {category} item {name!r}" + (
+            f" with ID {new_id}." if new_id else f". Response: {response}"
+        )
+    except Exception:
+        logger.exception(f"Error creating {kind} inventory item {name!r}")
+        raise
+
+
+@mcp.tool(
+    name="update_inventory_item",
+    description=(
+        "Updates properties of an inventory item (for example name, alpha, supplier). "
+        "Only the given fields change; set a field to null to clear it. This tool cannot "
+        "change stock: use set_inventory for that."
+    ),
+)
+async def update_inventory_item(kind: str, item_id: str, fields: dict) -> str:
+    logger.info(f"Tool: update_inventory_item called for {kind} {item_id}")
+    try:
+        category = parse_inventory_kind(kind)
+        if "inventory" in fields or "inventory_adjust" in fields:
+            raise ValueError("stock cannot be changed here; use set_inventory")
+        body = validate_inventory_fields(category, fields)
+    except ValueError as error:
+        return f"Invalid request: {error}"
+
+    try:
+        await brewfather_client.update_inventory(category, item_id, body)
+        return f"Updated {category} item {item_id}: {sorted(body)}."
+    except Exception:
+        logger.exception(f"Error updating {kind} inventory item {item_id}")
         raise
 
 

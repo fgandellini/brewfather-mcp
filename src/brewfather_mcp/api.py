@@ -225,6 +225,12 @@ class BrewfatherClient:
         url = self._build_url(f"inventory/{category}", id=id)
         await self._make_patch_request(url, data)
 
+    async def create_inventory_item(
+        self, category: InventoryCategory, data: dict
+    ) -> str:
+        url = self._build_url(f"inventory/{category}")
+        return await self._make_post_request(url, data)
+
     # Batch endpoints
     async def get_batches_list(
         self, query_params: ListQueryParams | None = None
