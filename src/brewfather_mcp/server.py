@@ -415,7 +415,25 @@ Name: {item.name}
 Author: {item.author or 'N/A'}
 Style: {item.style.name if item.style else 'N/A'}
 Type: {item.type or 'N/A'}
-"""
+{_format_recipe_stats(item)}"""
+
+
+def _format_recipe_stats(item) -> str:
+    stats = [
+        (label, fmt.format(value))
+        for label, fmt, value in (
+            ("OG", "{:.3f}", item.og),
+            ("FG", "{:.3f}", item.fg),
+            ("IBU", "{:.0f}", item.ibu),
+            ("ABV", "{:.1f}%", item.abv),
+            ("Color", "{:.1f} SRM", item.color),
+        )
+        if value is not None
+    ]
+    return " | ".join(f"{label} {value}" for label, value in stats) + "\n" if stats else ""
+
+
+RECIPE_LIST_INCLUDE = ["og", "fg", "ibu", "abv", "color"]
 
 
 def _truncation_note(data) -> str:
@@ -808,7 +826,7 @@ async def read_recipes_list(
     order_by: Optional[str] = None, order_by_direction: Optional[str] = None
 ) -> str:
     logger.info("received request for recipes list")
-    params = ListQueryParams()
+    params = ListQueryParams(include=RECIPE_LIST_INCLUDE)
     if error := _apply_ordering(params, order_by, order_by_direction):
         return error
     try:
@@ -989,7 +1007,7 @@ async def set_inventory(
 async def find_recipes(name: Optional[str] = None) -> str:
     logger.info(f"received request to find recipes: name={name!r}")
     try:
-        data = await brewfather_client.get_recipes_list(ListQueryParams())
+        data = await brewfather_client.get_recipes_list(ListQueryParams(include=RECIPE_LIST_INCLUDE))
         found = [_format_recipe_summary(i) for i in data.root if _name_matches(i, name)]
         body = "---\n".join(found) if found else "No recipes found."
         return body + _truncation_note(data)

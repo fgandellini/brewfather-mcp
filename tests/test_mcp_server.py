@@ -689,11 +689,15 @@ class TestBrewfatherMCP:
         recipes = self._items(
             MagicMock(spec=RecipeList), ["Pale Ale", "Porter"],
             author="me", style=None, type="All Grain",
+            og=1.05, fg=1.01, ibu=35.4, abv=5.2, color=None,
         )
         mock_brewfather_client.get_recipes_list.return_value = recipes
         with patch("brewfather_mcp.server.brewfather_client", mock_brewfather_client):
             result = await find_recipes(name="pale")
             assert "Pale Ale" in result and "Porter" not in result
+            assert "OG 1.050 | FG 1.010 | IBU 35 | ABV 5.2%" in result
+            params = mock_brewfather_client.get_recipes_list.call_args.args[0]
+            assert params.include == ["og", "fg", "ibu", "abv", "color"]
             assert await find_recipes(name="zzz") == "No recipes found."
 
     @pytest.mark.asyncio

@@ -45,6 +45,11 @@ class Recipe(BaseModel):
     type: RecipeType | None = Field(alias="type", default=None)
     equipment: EquipmentProfile | None = None
     style: RecipeStyle | None = None
+    og: float | None = None
+    fg: float | None = None
+    ibu: float | None = None
+    color: float | None = None
+    abv: float | None = None
 
     model_config = {
         "populate_by_name": True,
@@ -60,11 +65,6 @@ class RecipeDetail(Recipe):
     mash_efficiency: float | None = Field(alias="mashEfficiency", default=None)
 
     # Calculations
-    og: float | None = None
-    fg: float | None = None
-    ibu: float | None = None
-    color: float | None = None
-    abv: float | None = None
     og_plato: float | None = Field(alias="ogPlato", default=None)
     post_boil_gravity: float | None = Field(alias="postBoilGravity", default=None)
     pre_boil_gravity: float | None = Field(alias="preBoilGravity", default=None)
