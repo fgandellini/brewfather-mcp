@@ -1,4 +1,7 @@
 import json
+import os
+import subprocess
+import sys
 import pytest
 import httpx
 from pathlib import Path
@@ -880,3 +883,44 @@ class TestPagination:
         second_request = respx_mock.calls[1].request
         assert "inventory_exists=true" in str(second_request.url)
         assert "start_after" in str(second_request.url)
+
+
+class TestLazyCredentials:
+    """Credentials are read on first use, so the server can be imported without them."""
+
+    @pytest.fixture(autouse=True)
+    def no_credentials(self, monkeypatch):
+        monkeypatch.delenv("BREWFATHER_API_USER_ID", raising=False)
+        monkeypatch.delenv("BREWFATHER_API_KEY", raising=False)
+
+    def test_constructor_without_credentials_does_not_raise(self):
+        BrewfatherClient()
+
+    def test_auth_without_credentials_raises_value_error_naming_both_variables(self):
+        client = BrewfatherClient()
+        with pytest.raises(ValueError, match="BREWFATHER_API_USER_ID") as excinfo:
+            _ = client.auth
+        assert "BREWFATHER_API_KEY" in str(excinfo.value)
+
+    def test_credentials_set_after_construction_are_used(self, monkeypatch):
+        client = BrewfatherClient()
+        monkeypatch.setenv("BREWFATHER_API_USER_ID", "testuser")
+        monkeypatch.setenv("BREWFATHER_API_KEY", "testkey")
+        assert isinstance(client.auth, httpx.BasicAuth)
+
+    def test_importing_server_without_credentials_succeeds(self):
+        # Empty, not removed: server.py calls load_dotenv(), which would read the
+        # real .env, and load_dotenv does not override variables that already exist.
+        env = {
+            **os.environ,
+            "PYTHONPATH": "src",
+            "BREWFATHER_API_USER_ID": "",
+            "BREWFATHER_API_KEY": "",
+        }
+        result = subprocess.run(
+            [sys.executable, "-c", "import brewfather_mcp.server"],
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, result.stderr
