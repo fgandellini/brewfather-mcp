@@ -30,6 +30,7 @@ from brewfather_mcp.validation import (
     require_number,
     validate_batch_update,
     validate_inventory_fields,
+    validate_recipe_payload,
 )
 from typing import Optional
 from datetime import datetime
@@ -774,6 +775,68 @@ async def read_recipes_list() -> str:
         raise
 
 
+def _created_id(response: str) -> Optional[str]:
+    try:
+        return json.loads(response).get("_id")
+    except (ValueError, AttributeError):
+        return None
+
+
+@mcp.tool(
+    name="create_recipe",
+    description=(
+        "Creates a new recipe. fields holds optional recipe properties in metric units "
+        "(liters, kg, grams, Celsius, SG): type (Extract, Partial Mash, All Grain), batchSize, "
+        "boilSize, boilTime, efficiency, notes, fermentables, hops, miscs, yeasts, mash, "
+        "fermentation, ... Calculated values (OG, IBU, color) are not accepted and may be "
+        "empty until the recipe is opened in the Brewfather app."
+    ),
+)
+async def create_recipe(name: str, fields: Optional[dict] = None) -> str:
+    logger.info(f"Tool: create_recipe called for {name!r}")
+    try:
+        fields = dict(fields or {})
+        if "name" in fields:
+            raise ValueError("do not put 'name' in fields; use the name parameter")
+        body = validate_recipe_payload({"name": name, **fields}, creating=True)
+    except ValueError as error:
+        return f"Invalid request: {error}"
+
+    try:
+        response = await brewfather_client.create_recipe(body)
+        new_id = _created_id(response)
+        return f"Created recipe {name!r}" + (
+            f" with ID {new_id}." if new_id else f". Response: {response}"
+        )
+    except Exception:
+        logger.exception(f"Error creating recipe {name!r}")
+        raise
+
+
+@mcp.tool(
+    name="update_recipe",
+    description=(
+        "Updates a recipe. Only the top-level fields in fields change, and each one replaces "
+        "the stored value completely: an ingredient list (fermentables, hops, miscs, yeasts) "
+        "REPLACES the whole list, so send every ingredient you want to keep. Set a field to "
+        "null to clear it. Metric units. Empty ingredient lists are refused."
+    ),
+)
+async def update_recipe(recipe_id: str, fields: dict) -> str:
+    logger.info(f"Tool: update_recipe called for {recipe_id}")
+    try:
+        body = validate_recipe_payload(fields, creating=False)
+    except ValueError as error:
+        return f"Invalid request: {error}"
+
+    try:
+        await brewfather_client.update_recipe(recipe_id, body)
+        return f"Updated recipe {recipe_id}: {sorted(body)}."
+    except Exception:
+        logger.exception(f"Error updating recipe {recipe_id}")
+        raise
+
+
 @mcp.tool(
     name="get_recipe_detail",
     description="Get detailed information for a specific recipe including ingredients, process details and specifications.",
@@ -957,10 +1020,7 @@ async def create_inventory_item(
 
     try:
         response = await brewfather_client.create_inventory_item(category, body)
-        try:
-            new_id = json.loads(response).get("_id")
-        except (ValueError, AttributeError):
-            new_id = None
+        new_id = _created_id(response)
         return f"Created {category} item {name!r}" + (
             f" with ID {new_id}." if new_id else f". Response: {response}"
         )

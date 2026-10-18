@@ -4,6 +4,7 @@ from brewfather_mcp.types import InventoryCategory
 from brewfather_mcp.validation import (
     validate_batch_update,
     validate_inventory_fields,
+    validate_recipe_payload,
 )
 
 
@@ -89,3 +90,63 @@ def test_inventory_allows_null_to_clear():
 def test_inventory_rejects(category, fields):
     with pytest.raises(ValueError):
         validate_inventory_fields(category, fields)
+
+
+def test_recipe_create_minimal():
+    assert validate_recipe_payload({"name": "Test"}, creating=True) == {"name": "Test"}
+
+
+@pytest.mark.parametrize("data", [{}, {"name": ""}, {"name": "  "}, {"name": None}])
+def test_recipe_create_requires_name(data):
+    with pytest.raises(ValueError):
+        validate_recipe_payload(data, creating=True)
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        {"_id": "x"},
+        {"data": {}},
+        {"createdAt": "x"},
+        {"og": 1.05},
+        {"ibu": 30},
+        {"type": "Brew in a Bag"},
+        {"batchSize": 0.1},
+        {"efficiency": 20},
+        {"mashEfficiency": 101},
+        {"batchSize": True},
+        {"hops": "Citra"},
+        {"hops": ["Citra"]},
+        {"ibuFormula": "magic"},
+    ],
+)
+def test_recipe_rejects(data):
+    with pytest.raises(ValueError):
+        validate_recipe_payload({"name": "Test", **data}, creating=True)
+
+
+def test_recipe_update_rejects_empty_ingredient_array():
+    for field in ("fermentables", "hops", "miscs", "yeasts"):
+        with pytest.raises(ValueError, match="erase"):
+            validate_recipe_payload({field: []}, creating=False)
+    data = {"hops": [{"name": "Citra", "amount": 20}]}
+    assert validate_recipe_payload(data, creating=False) == data
+
+
+def test_recipe_create_allows_empty_ingredient_array():
+    data = {"name": "Test", "hops": []}
+    assert validate_recipe_payload(data, creating=True) == data
+
+
+def test_recipe_update_clear_author():
+    assert validate_recipe_payload({"author": None}, creating=False) == {"author": None}
+
+
+def test_recipe_update_name_cannot_be_cleared():
+    with pytest.raises(ValueError):
+        validate_recipe_payload({"name": None}, creating=False)
+
+
+def test_recipe_update_empty():
+    with pytest.raises(ValueError):
+        validate_recipe_payload({}, creating=False)

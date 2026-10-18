@@ -26,6 +26,8 @@ from brewfather_mcp.server import (
     find_batches,
     find_recipes,
     list_inventory,
+    create_recipe,
+    update_recipe,
 )
 from brewfather_mcp.api import BrewfatherClient
 from brewfather_mcp.types import (
@@ -720,4 +722,47 @@ class TestBrewfatherMCP:
     async def test_list_inventory_unknown_kind(self, mock_brewfather_client):
         with patch("brewfather_mcp.server.brewfather_client", mock_brewfather_client):
             result = await list_inventory(kind="grains")
+            assert result.startswith("Invalid request:")
+
+    # --- recipe create / update ---
+
+    @pytest.mark.asyncio
+    async def test_create_recipe(self, mock_brewfather_client):
+        mock_brewfather_client.create_recipe.return_value = '{"_id": "r1"}'
+        with patch("brewfather_mcp.server.brewfather_client", mock_brewfather_client):
+            result = await create_recipe(name="Test", fields={"batchSize": 20.0})
+            mock_brewfather_client.create_recipe.assert_called_once_with(
+                {"name": "Test", "batchSize": 20.0}
+            )
+            assert "r1" in result
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "kwargs",
+        [
+            {"name": ""},
+            {"name": "Test", "fields": {"og": 1.05}},
+            {"name": "Test", "fields": {"name": "Other"}},
+        ],
+    )
+    async def test_create_recipe_invalid(self, mock_brewfather_client, kwargs):
+        with patch("brewfather_mcp.server.brewfather_client", mock_brewfather_client):
+            result = await create_recipe(**kwargs)
+            mock_brewfather_client.create_recipe.assert_not_called()
+            assert result.startswith("Invalid request:")
+
+    @pytest.mark.asyncio
+    async def test_update_recipe(self, mock_brewfather_client):
+        with patch("brewfather_mcp.server.brewfather_client", mock_brewfather_client):
+            result = await update_recipe(recipe_id="r1", fields={"notes": "hi"})
+            mock_brewfather_client.update_recipe.assert_called_once_with(
+                "r1", {"notes": "hi"}
+            )
+            assert "r1" in result
+
+    @pytest.mark.asyncio
+    async def test_update_recipe_invalid(self, mock_brewfather_client):
+        with patch("brewfather_mcp.server.brewfather_client", mock_brewfather_client):
+            result = await update_recipe(recipe_id="r1", fields={"hops": []})
+            mock_brewfather_client.update_recipe.assert_not_called()
             assert result.startswith("Invalid request:")

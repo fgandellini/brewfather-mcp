@@ -273,6 +273,12 @@ class BrewfatherClient:
     ) -> RecipeList:
         return await self._get_paginated_list("recipes", RecipeList, query_params)
 
+    async def create_recipe(self, data: dict) -> str:
+        return await self._make_post_request(self._build_url("recipes"), data)
+
+    async def update_recipe(self, id: str, data: dict) -> None:
+        await self._make_patch_request(self._build_url("recipes", id=id), data)
+
     async def get_recipe_detail(self, id: str) -> RecipeDetail:
         url = self._build_url("recipes", id=id)
         json_response = await self._make_request(url)

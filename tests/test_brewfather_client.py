@@ -207,6 +207,29 @@ async def test_get_inventory_list_hops(client: BrewfatherClient, respx_mock: Moc
     assert [item.id for item in result.root] == ["h1"]
 
 
+@pytest.mark.asyncio
+async def test_create_recipe_post(client: BrewfatherClient, respx_mock: MockRouter):
+    data = {"name": "Test", "batchSize": 20.0}
+    respx_mock.post(f"{BASE_URL}/recipes").mock(
+        return_value=httpx.Response(200, json={"_id": "r1"})
+    )
+    result = await client.create_recipe(data)
+    request = respx_mock.calls.last.request
+    assert request.method == "POST"
+    assert json.loads(request.content) == data
+    assert json.loads(result) == {"_id": "r1"}
+
+
+@pytest.mark.asyncio
+async def test_update_recipe_patch(client: BrewfatherClient, respx_mock: MockRouter):
+    data = {"notes": "hello"}
+    respx_mock.patch(f"{BASE_URL}/recipes/r1").mock(return_value=httpx.Response(200))
+    await client.update_recipe("r1", data)
+    request = respx_mock.calls.last.request
+    assert request.method == "PATCH"
+    assert json.loads(request.content) == data
+
+
 class TestFermentables:
     @pytest.mark.asyncio
     async def test_get_fermentables_list(

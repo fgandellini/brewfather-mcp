@@ -236,3 +236,91 @@ def validate_inventory_fields(
         elif value not in rule:
             raise ValueError(f"{name} must be one of {sorted(rule)}, got {value!r}")
     return dict(fields)
+
+
+# --- Recipes -----------------------------------------------------------------
+# Writable top-level recipe fields (https://docs.brewfather.app/api/types.md). Calculated
+# values (og, fg, abv, ibu, color, totals, data) and server-managed fields are left out:
+# the API ignores them, so accepting them would only hide mistakes.
+
+RECIPE_TYPES = {"Extract", "Partial Mash", "All Grain"}
+IBU_FORMULAS = {"tinseth", "tinseth*", "rager", "garetz", "noonan"}
+INGREDIENT_ARRAYS = ("fermentables", "hops", "miscs", "yeasts")
+
+RECIPE_FIELDS: dict[str, object] = {
+    "name": _STR,
+    "author": _STR,
+    "type": RECIPE_TYPES,
+    "teaser": _STR,
+    "hidden": _BOOL,
+    "style": _OBJ,
+    "styleConformity": _BOOL,
+    "batchSize": (0.5, None),
+    "boilSize": (0.0, None),
+    "boilTime": (0.0, None),
+    "efficiency": (35.0, 100.0),
+    "mashEfficiency": (0.0, 100.0),
+    "fermentables": "list",
+    "hops": "list",
+    "miscs": "list",
+    "yeasts": "list",
+    "ibuFormula": IBU_FORMULAS,
+    "carbonation": (0.0, 5.0),
+    "carbonationTemp": _NUM,
+    "equipment": _OBJ,
+    "mash": _OBJ,
+    "fermentation": _OBJ,
+    "water": _OBJ,
+    "notes": _STR,
+    "tags": "list",
+    "nutrition": _OBJ,
+    "path": _STR,
+}
+
+
+def validate_recipe_payload(
+    data: dict[str, object], *, creating: bool
+) -> dict[str, object]:
+    """Validate the body of a recipe create (POST) or update (PATCH)."""
+    unknown = sorted(set(data) - set(RECIPE_FIELDS))
+    if unknown:
+        raise ValueError(
+            f"unknown or read-only recipe field(s) {unknown}; allowed: {sorted(RECIPE_FIELDS)}"
+        )
+    if creating:
+        name = data.get("name")
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError("a recipe needs a non-empty name")
+    if not data:
+        raise ValueError("no fields provided")
+
+    for field, value in data.items():
+        rule = RECIPE_FIELDS[field]
+        if value is None:
+            if field == "name":
+                raise ValueError("name cannot be cleared")
+            continue
+        if rule == _STR:
+            if not isinstance(value, str):
+                raise ValueError(f"{field} must be text, got {value!r}")
+        elif rule == _BOOL:
+            if not isinstance(value, bool):
+                raise ValueError(f"{field} must be true or false, got {value!r}")
+        elif rule == _OBJ:
+            if not isinstance(value, dict):
+                raise ValueError(f"{field} must be an object, got {value!r}")
+        elif rule == _NUM:
+            require_number(field, value)
+        elif rule == "list":
+            if not isinstance(value, list) or not all(isinstance(i, dict) for i in value):
+                raise ValueError(f"{field} must be a list of objects")
+            if field in INGREDIENT_ARRAYS and not value and not creating:
+                raise ValueError(
+                    f"an empty {field} list would erase all {field} of the recipe "
+                    "(the API replaces the whole list); send the full new list instead"
+                )
+        elif isinstance(rule, tuple):
+            require_number(field, value, *rule)
+        elif value not in rule:
+            raise ValueError(f"{field} must be one of {sorted(rule)}, got {value!r}")
+    return dict(data)
