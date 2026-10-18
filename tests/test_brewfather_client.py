@@ -5,7 +5,12 @@ from pathlib import Path
 from respx import MockRouter
 from typing import List, Tuple
 
-from brewfather_mcp.api import BrewfatherClient, BASE_URL, ListQueryParams
+from brewfather_mcp.api import (
+    BrewfatherClient,
+    BASE_URL,
+    ListQueryParams,
+    RateLimitError,
+)
 from brewfather_mcp.types import (
     Batch,
     BatchDetail,
@@ -100,6 +105,38 @@ async def test_http_error_handling_patch(
     )
     with pytest.raises(httpx.HTTPStatusError):
         await client.update_batch_detail(batch_id, {"status": "Failed"})
+
+
+@pytest.mark.asyncio
+async def test_rate_limit_get_with_retry_after(
+    client: BrewfatherClient, respx_mock: MockRouter
+):
+    respx_mock.get(f"{BASE_URL}/batches/b1").mock(
+        return_value=httpx.Response(429, headers={"Retry-After": "30"})
+    )
+    with pytest.raises(RateLimitError) as error:
+        await client.get_batch_detail("b1")
+    assert "30 seconds" in str(error.value)
+    assert "500 calls per hour" in str(error.value)
+    assert error.value.retry_after == "30"
+
+
+@pytest.mark.asyncio
+async def test_rate_limit_patch_without_retry_after(
+    client: BrewfatherClient, respx_mock: MockRouter
+):
+    respx_mock.patch(f"{BASE_URL}/batches/b1").mock(return_value=httpx.Response(429))
+    with pytest.raises(RateLimitError) as error:
+        await client.update_batch_detail("b1", {"status": "Completed"})
+    assert error.value.retry_after is None
+    assert "try again later" in str(error.value)
+
+
+@pytest.mark.asyncio
+async def test_rate_limit_post(client: BrewfatherClient, respx_mock: MockRouter):
+    respx_mock.post(f"{BASE_URL}/recipes").mock(return_value=httpx.Response(429))
+    with pytest.raises(RateLimitError):
+        await client._make_post_request(f"{BASE_URL}/recipes", {})
 
 
 class TestFermentables:

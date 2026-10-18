@@ -24,6 +24,21 @@ from .types.brewtracker import BrewTrackerStatus, BatchReadingsList, LastReading
 
 BASE_URL: str = "https://api.brewfather.app/v2"
 
+class RateLimitError(Exception):
+    """Raised when Brewfather answers HTTP 429 (500 calls per hour per API key)."""
+
+    def __init__(self, retry_after: str | None = None):
+        self.retry_after = retry_after
+        wait = (
+            f"Retry after {retry_after} seconds."
+            if retry_after
+            else "Please try again later."
+        )
+        super().__init__(
+            f"Brewfather rate limit reached (500 calls per hour per API key). {wait}"
+        )
+
+
 class OrderByDirection(StrEnum):
     ASCENDING = "asc"
     DESCENDING = "desc"
@@ -81,10 +96,15 @@ class BrewfatherClient:
         self.auth = httpx.BasicAuth(user_id, api_key)
         self.max_pages = 10  # Safety limit to prevent infinite loops
 
+    def _check_response(self, response: httpx.Response) -> None:
+        if response.status_code == 429:
+            raise RateLimitError(response.headers.get("Retry-After"))
+        response.raise_for_status()
+
     async def _make_request(self, url: str) -> str:
         async with httpx.AsyncClient(auth=self.auth) as client:
             response = await client.get(url)
-            response.raise_for_status()
+            self._check_response(response)
             # Write response to a file for debugging when debug mode is enabled
             if os.getenv("BREWFATHER_MCP_DEBUG"):
                 debug_dir = os.path.join(os.path.dirname(__file__), "..", "..", "debug")
@@ -98,12 +118,12 @@ class BrewfatherClient:
     async def _make_patch_request(self, url: str, data: dict) -> None:
         async with httpx.AsyncClient(auth=self.auth) as client:
             response = await client.patch(url, json=data)
-            response.raise_for_status()
+            self._check_response(response)
 
     async def _make_post_request(self, url: str, data: dict) -> str:
         async with httpx.AsyncClient(auth=self.auth) as client:
             response = await client.post(url, json=data)
-            response.raise_for_status()
+            self._check_response(response)
             return response.text
 
     def _build_url(
