@@ -23,6 +23,7 @@ from brewfather_mcp.types.misc import MiscUse, MiscType
 from brewfather_mcp.types.fermentable import FermentableType, FermentableGrainGroup
 from brewfather_mcp.types.base import MashStepType, FermentationStepType
 from brewfather_mcp.formatter import format_recipe_details
+from brewfather_mcp.validation import validate_batch_update
 from typing import Optional
 from datetime import datetime
 
@@ -656,7 +657,11 @@ Tags: {', '.join(item.tags) if item.tags else 'None'}
 
 @mcp.tool(
     name="update_batch",
-    description="Updates a batch's status or measured values.",
+    description=(
+        "Updates a batch's status or measured values. Gravities are SG (0.1-1.9), "
+        "volumes are liters, temperature is Celsius. Pass clear_fields (for example "
+        "['measuredFg']) to clear measured values."
+    ),
 )
 async def update_batch(
     batch_id: str,
@@ -673,38 +678,33 @@ async def update_batch(
     measuredFg: Optional[float] = None,
     measuredBottlingSize: Optional[float] = None,
     carbonationTemp: Optional[float] = None,
+    clear_fields: Optional[list[str]] = None,
 ) -> str:
     logger.info(f"received request to update batch: {batch_id}")
-    update_data = {}
-    if status:
-        update_data["status"] = status
-    if measuredMashPh is not None:
-        update_data["measuredMashPh"] = measuredMashPh
-    if measuredBoilSize is not None:
-        update_data["measuredBoilSize"] = measuredBoilSize
-    if measuredFirstWortGravity is not None:
-        update_data["measuredFirstWortGravity"] = measuredFirstWortGravity
-    if measuredPreBoilGravity is not None:
-        update_data["measuredPreBoilGravity"] = measuredPreBoilGravity
-    if measuredPostBoilGravity is not None:
-        update_data["measuredPostBoilGravity"] = measuredPostBoilGravity
-    if measuredKettleSize is not None:
-        update_data["measuredKettleSize"] = measuredKettleSize
-    if measuredOg is not None:
-        update_data["measuredOg"] = measuredOg
-    if measuredFermenterTopUp is not None:
-        update_data["measuredFermenterTopUp"] = measuredFermenterTopUp
-    if measuredBatchSize is not None:
-        update_data["measuredBatchSize"] = measuredBatchSize
-    if measuredFg is not None:
-        update_data["measuredFg"] = measuredFg
-    if measuredBottlingSize is not None:
-        update_data["measuredBottlingSize"] = measuredBottlingSize
-    if carbonationTemp is not None:
-        update_data["carbonationTemp"] = carbonationTemp
+    values = {
+        "status": status,
+        "measuredMashPh": measuredMashPh,
+        "measuredBoilSize": measuredBoilSize,
+        "measuredFirstWortGravity": measuredFirstWortGravity,
+        "measuredPreBoilGravity": measuredPreBoilGravity,
+        "measuredPostBoilGravity": measuredPostBoilGravity,
+        "measuredKettleSize": measuredKettleSize,
+        "measuredOg": measuredOg,
+        "measuredFermenterTopUp": measuredFermenterTopUp,
+        "measuredBatchSize": measuredBatchSize,
+        "measuredFg": measuredFg,
+        "measuredBottlingSize": measuredBottlingSize,
+        "carbonationTemp": carbonationTemp,
+    }
+    values = {name: value for name, value in values.items() if value is not None}
 
-    if not update_data:
+    if not values and not clear_fields:
         return "No update parameters provided."
+
+    try:
+        update_data = validate_batch_update(values, clear_fields)
+    except ValueError as error:
+        return f"Invalid update: {error}"
 
     try:
         await brewfather_client.update_batch_detail(batch_id, update_data)

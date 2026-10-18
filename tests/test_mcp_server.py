@@ -444,6 +444,22 @@ class TestBrewfatherMCP:
             assert result == "No update parameters provided."
 
     @pytest.mark.asyncio
+    async def test_update_batch_clear_fields(self, mock_brewfather_client):
+        with patch("brewfather_mcp.server.brewfather_client", mock_brewfather_client):
+            result = await update_batch(batch_id="b", clear_fields=["measuredFg"])
+            mock_brewfather_client.update_batch_detail.assert_called_once_with(
+                "b", {"measuredFg": None}
+            )
+            assert result == "Batch b updated successfully."
+
+    @pytest.mark.asyncio
+    async def test_update_batch_invalid_value(self, mock_brewfather_client):
+        with patch("brewfather_mcp.server.brewfather_client", mock_brewfather_client):
+            result = await update_batch(batch_id="b", measuredOg=2.0)
+            mock_brewfather_client.update_batch_detail.assert_not_called()
+            assert result.startswith("Invalid update:")
+
+    @pytest.mark.asyncio
     async def test_update_batch_error(self, mock_brewfather_client):
         mock_brewfather_client.update_batch_detail.side_effect = Exception("API Error Update Batch")
         with patch("brewfather_mcp.server.brewfather_client", mock_brewfather_client), \
