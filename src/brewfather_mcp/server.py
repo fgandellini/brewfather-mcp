@@ -393,6 +393,25 @@ async def inventory_summary() -> str:
         raise
 
 
+BATCH_LIST_INCLUDE = [
+    "measuredOg", "measuredFg", "measuredAbv", "estimatedOg", "estimatedFg", "estimatedIbu",
+]
+
+
+def _format_batch_stats(item) -> str:
+    stats = [
+        f"{label} {fmt.format(value)}"
+        for label, fmt, value in (
+            ("OG", "{:.3f}", item.measured_og if item.measured_og is not None else item.estimated_og),
+            ("FG", "{:.3f}", item.measured_fg if item.measured_fg is not None else item.estimated_fg),
+            ("ABV", "{:.1f}%", item.measured_abv),
+            ("IBU", "{:.0f}", item.estimated_ibu),
+        )
+        if value is not None
+    ]
+    return " | ".join(stats) + "\n" if stats else ""
+
+
 def _format_batch_summary(item) -> str:
     brew_date_str = (
         datetime.fromtimestamp(item.brew_date / 1000).strftime("%Y-%m-%d %H:%M:%S")
@@ -406,7 +425,7 @@ Status: {item.status or 'N/A'}
 Brewer: {item.brewer or 'N/A'}
 Brew Date: {brew_date_str}
 Recipe Name: {item.recipe_name}
-"""
+{_format_batch_stats(item)}"""
 
 
 def _format_recipe_summary(item) -> str:
@@ -478,7 +497,7 @@ async def read_batches_list(
     order_by_direction: Optional[str] = None,
 ) -> str:
     logger.info("received request for batches list")
-    params = ListQueryParams()
+    params = ListQueryParams(include=BATCH_LIST_INCLUDE)
     if status:
         valid = [s.value for s in BatchStatus]
         if status not in valid:
@@ -504,7 +523,7 @@ async def read_batches_list(
 )
 async def find_batches(name: Optional[str] = None, status: Optional[str] = None) -> str:
     logger.info(f"received request to find batches: name={name!r} status={status!r}")
-    params = ListQueryParams()
+    params = ListQueryParams(include=BATCH_LIST_INCLUDE)
     if status:
         valid = [s.value for s in BatchStatus]
         if status not in valid:

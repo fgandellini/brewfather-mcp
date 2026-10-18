@@ -43,6 +43,12 @@ class Batch(BaseModel):
     brewer: Optional[str] = None
     # Recipe is an object containing a name.
     recipe_name: str = Field(validation_alias=AliasPath("recipe", "name"))
+    measured_og: Optional[float] = Field(alias="measuredOg", default=None)
+    measured_fg: Optional[float] = Field(alias="measuredFg", default=None)
+    measured_abv: Optional[float] = Field(alias="measuredAbv", default=None)
+    estimated_og: Optional[float] = Field(alias="estimatedOg", default=None)
+    estimated_fg: Optional[float] = Field(alias="estimatedFg", default=None)
+    estimated_ibu: Optional[float] = Field(alias="estimatedIbu", default=None)
 
 class BatchDetail(Batch, VersionedModel):
     """Represents a batch with fields from Brewfather API."""
@@ -67,9 +73,6 @@ class BatchDetail(Batch, VersionedModel):
     devices: Dict[str, Any] = Field(default_factory=dict)
     
     # Batch-specific measurements vs estimates
-    measured_og: Optional[float] = Field(alias="measuredOg", default=None)
-    measured_fg: Optional[float] = Field(alias="measuredFg", default=None)
-    measured_abv: Optional[float] = Field(alias="measuredAbv", default=None)
     measured_attenuation: Optional[float] = Field(alias="measuredAttenuation", default=None)
     measured_efficiency: Optional[float] = Field(alias="measuredEfficiency", default=None)
     measured_mash_efficiency: Optional[float] = Field(alias="measuredMashEfficiency", default=None)
@@ -86,9 +89,6 @@ class BatchDetail(Batch, VersionedModel):
     measured_mash_ph: Optional[float] = Field(alias="measuredMashPh", default=None)
     
     # Estimates
-    estimated_og: Optional[float] = Field(alias="estimatedOg", default=None)
-    estimated_fg: Optional[float] = Field(alias="estimatedFg", default=None)
-    estimated_ibu: Optional[float] = Field(alias="estimatedIbu", default=None)
     estimated_color: Optional[float] = Field(alias="estimatedColor", default=None)
     estimated_abv: Optional[float] = Field(alias="estimatedAbv", default=None)
     estimated_total_gravity: Optional[float] = Field(alias="estimatedTotalGravity", default=None)

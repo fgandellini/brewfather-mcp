@@ -190,6 +190,9 @@ def mock_brewfather_client(mocker):
     batch.measured_og = None
     batch.measured_fg = None
     batch.measured_abv = None
+    batch.estimated_og = 1.048
+    batch.estimated_fg = 1.010
+    batch.estimated_ibu = 30.2
     batch.measured_mash_ph = None
     batch.measured_first_wort_gravity = None
     batch.measured_pre_boil_gravity = None
@@ -652,6 +655,8 @@ class TestBrewfatherMCP:
         batches = self._items(
             MagicMock(spec=BatchList), names,
             status="Fermenting", batch_no=1, brewer="me", brew_date=None, recipe_name="R",
+            measured_og=1.050, measured_fg=None, measured_abv=None,
+            estimated_og=1.048, estimated_fg=1.010, estimated_ibu=30.2,
         )
         client.get_batches_list.return_value = batches
 
@@ -661,6 +666,9 @@ class TestBrewfatherMCP:
         with patch("brewfather_mcp.server.brewfather_client", mock_brewfather_client):
             result = await find_batches(name="IPA")
             assert "IPA #1" in result and "ipa #2" in result
+            assert "OG 1.050 | FG 1.010 | IBU 30" in result
+            params = mock_brewfather_client.get_batches_list.call_args.args[0]
+            assert "measuredOg" in params.include
             assert "Stout" not in result
 
     @pytest.mark.asyncio
