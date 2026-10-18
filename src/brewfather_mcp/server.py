@@ -1,5 +1,4 @@
 import asyncio
-import json
 import logging
 
 from dotenv import load_dotenv
@@ -12,6 +11,7 @@ from brewfather_mcp.api import (
     LIST_PAGE_SIZE,
     BrewfatherClient,
     ListQueryParams,
+    created_id,
 )
 from brewfather_mcp.inventory import (
     get_fermentables_summary,
@@ -791,13 +791,6 @@ async def read_recipes_list() -> str:
         raise
 
 
-def _created_id(response: str) -> Optional[str]:
-    try:
-        return json.loads(response).get("_id")
-    except (ValueError, AttributeError):
-        return None
-
-
 @mcp.tool(
     name="create_recipe",
     description=(
@@ -820,7 +813,7 @@ async def create_recipe(name: str, fields: Optional[dict] = None) -> str:
 
     try:
         response = await brewfather_client.create_recipe(body)
-        new_id = _created_id(response)
+        new_id = created_id(response)
         return f"Created recipe {name!r}" + (
             f" with ID {new_id}." if new_id else f". Response: {response}"
         )
@@ -1038,7 +1031,7 @@ async def create_inventory_item(
 
     try:
         response = await brewfather_client.create_inventory_item(category, body)
-        new_id = _created_id(response)
+        new_id = created_id(response)
         return f"Created {category} item {name!r}" + (
             f" with ID {new_id}." if new_id else f". Response: {response}"
         )

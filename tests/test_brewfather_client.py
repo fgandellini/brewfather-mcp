@@ -10,6 +10,7 @@ from brewfather_mcp.api import (
     BASE_URL,
     ListQueryParams,
     RateLimitError,
+    created_id,
 )
 from brewfather_mcp.types import (
     InventoryCategory,
@@ -171,13 +172,13 @@ async def test_create_inventory_item_post(
 ):
     data = {"name": "Citra", "alpha": 12.0, "inventory": 100}
     respx_mock.post(f"{BASE_URL}/inventory/hops").mock(
-        return_value=httpx.Response(200, json={"_id": "new1"})
+        return_value=httpx.Response(200, json={"id": "new1"})
     )
     result = await client.create_inventory_item(InventoryCategory.HOPS, data)
     request = respx_mock.calls.last.request
     assert request.method == "POST"
     assert json.loads(request.content) == data
-    assert json.loads(result) == {"_id": "new1"}
+    assert json.loads(result) == {"id": "new1"}
 
 
 def test_query_params_status():
@@ -211,13 +212,13 @@ async def test_get_inventory_list_hops(client: BrewfatherClient, respx_mock: Moc
 async def test_create_recipe_post(client: BrewfatherClient, respx_mock: MockRouter):
     data = {"name": "Test", "batchSize": 20.0}
     respx_mock.post(f"{BASE_URL}/recipes").mock(
-        return_value=httpx.Response(200, json={"_id": "r1"})
+        return_value=httpx.Response(200, json={"id": "r1"})
     )
     result = await client.create_recipe(data)
     request = respx_mock.calls.last.request
     assert request.method == "POST"
     assert json.loads(request.content) == data
-    assert json.loads(result) == {"_id": "r1"}
+    assert json.loads(result) == {"id": "r1"}
 
 
 @pytest.mark.asyncio
@@ -228,6 +229,20 @@ async def test_update_recipe_patch(client: BrewfatherClient, respx_mock: MockRou
     request = respx_mock.calls.last.request
     assert request.method == "PATCH"
     assert json.loads(request.content) == data
+
+
+@pytest.mark.parametrize(
+    "response, expected",
+    [
+        ('{"id": "abc"}', "abc"),
+        ('{"_id": "abc"}', "abc"),
+        ('{"other": 1}', None),
+        ("not json", None),
+        ("[1]", None),
+    ],
+)
+def test_created_id(response, expected):
+    assert created_id(response) == expected
 
 
 class TestFermentables:

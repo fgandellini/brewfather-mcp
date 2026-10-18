@@ -580,7 +580,7 @@ class TestBrewfatherMCP:
 
     @pytest.mark.asyncio
     async def test_create_inventory_item(self, mock_brewfather_client):
-        mock_brewfather_client.create_inventory_item.return_value = '{"_id": "new1"}'
+        mock_brewfather_client.create_inventory_item.return_value = '{"id": "new1"}'
         with patch("brewfather_mcp.server.brewfather_client", mock_brewfather_client):
             result = await create_inventory_item(
                 kind="hops", name="Citra", fields={"alpha": 12.0}, amount=100.0
@@ -589,7 +589,7 @@ class TestBrewfatherMCP:
                 InventoryCategory.HOPS,
                 {"name": "Citra", "alpha": 12.0, "inventory": 100.0},
             )
-            assert "new1" in result
+            assert "with ID new1" in result
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
@@ -728,13 +728,13 @@ class TestBrewfatherMCP:
 
     @pytest.mark.asyncio
     async def test_create_recipe(self, mock_brewfather_client):
-        mock_brewfather_client.create_recipe.return_value = '{"_id": "r1"}'
+        mock_brewfather_client.create_recipe.return_value = '{"id": "r1"}'
         with patch("brewfather_mcp.server.brewfather_client", mock_brewfather_client):
             result = await create_recipe(name="Test", fields={"batchSize": 20.0})
             mock_brewfather_client.create_recipe.assert_called_once_with(
                 {"name": "Test", "batchSize": 20.0}
             )
-            assert "r1" in result
+            assert "with ID r1" in result
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
@@ -791,3 +791,10 @@ class TestBrewfatherMCP:
         self._with_batches(mock_brewfather_client, ["Stout"])
         with patch("brewfather_mcp.server.brewfather_client", mock_brewfather_client):
             assert "incomplete" not in await find_batches(name="Stout")
+
+    @pytest.mark.asyncio
+    async def test_create_tools_report_unparseable_response(self, mock_brewfather_client):
+        mock_brewfather_client.create_recipe.return_value = "Created"
+        with patch("brewfather_mcp.server.brewfather_client", mock_brewfather_client):
+            result = await create_recipe(name="Test")
+            assert "Created recipe 'Test'" in result and "Response: Created" in result

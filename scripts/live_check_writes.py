@@ -17,7 +17,7 @@ from datetime import datetime
 
 from dotenv import load_dotenv
 
-from brewfather_mcp.api import BrewfatherClient
+from brewfather_mcp.api import BrewfatherClient, created_id
 from brewfather_mcp.types import InventoryCategory
 from brewfather_mcp.validation import validate_inventory_fields, validate_recipe_payload
 
@@ -39,7 +39,11 @@ async def main() -> int:
     recipe = validate_recipe_payload(
         {"name": name, "type": "All Grain", "batchSize": 20.0}, creating=True
     )
-    recipe_id = json.loads(await client.create_recipe(recipe))["_id"]
+    response = await client.create_recipe(recipe)
+    recipe_id = created_id(response)
+    if not recipe_id:
+        print(f"create_recipe succeeded but no ID found in the response: {response!r}")
+        return 1
     print(f"created recipe {recipe_id}")
 
     update = validate_recipe_payload(
@@ -59,9 +63,13 @@ async def main() -> int:
     hop = validate_inventory_fields(
         InventoryCategory.HOPS, {"name": name, "alpha": 5.0, "type": "Pellet"}
     )
-    hop_id = json.loads(
-        await client.create_inventory_item(InventoryCategory.HOPS, {**hop, "inventory": 10})
-    )["_id"]
+    response = await client.create_inventory_item(
+        InventoryCategory.HOPS, {**hop, "inventory": 10}
+    )
+    hop_id = created_id(response)
+    if not hop_id:
+        print(f"create_inventory_item succeeded but no ID found in the response: {response!r}")
+        return 1
     print(f"created hop {hop_id} with stock 10")
     await client.update_inventory(InventoryCategory.HOPS, hop_id, {"inventory_adjust": -4})
     stock = (await client.get_hop_detail(hop_id)).inventory

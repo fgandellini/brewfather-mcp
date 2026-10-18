@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from enum import StrEnum
+import json
 import logging
 import os
 import httpx
@@ -40,6 +41,17 @@ class RateLimitError(Exception):
         super().__init__(
             f"Brewfather rate limit reached (500 calls per hour per API key). {wait}"
         )
+
+
+def created_id(response: str) -> str | None:
+    """Read the new item's ID from a create response ({"id": "..."} per the API docs)."""
+    try:
+        body = json.loads(response)
+    except ValueError:
+        return None
+    if not isinstance(body, dict):
+        return None
+    return body.get("id") or body.get("_id")
 
 
 class OrderByDirection(StrEnum):
