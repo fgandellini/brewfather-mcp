@@ -69,6 +69,7 @@ class ListQueryParams:
     order_by: str | None = None
     order_by_direction: OrderByDirection | None = None
     status: str | None = None
+    include: list[str] | None = None
 
     def as_query_param_str(self) -> str | None:
         params = []
@@ -84,6 +85,9 @@ class ListQueryParams:
 
         if self.status:
             params.append(f"status={urllib.parse.quote_plus(self.status)}")
+
+        if self.include:
+            params.append(f"include={urllib.parse.quote(','.join(self.include), safe=',.')}")
 
         if self.limit:
             params.append(f"limit={self.limit}")

@@ -11,6 +11,7 @@ from brewfather_mcp.api import (
     LIST_PAGE_SIZE,
     BrewfatherClient,
     ListQueryParams,
+    OrderByDirection,
     created_id,
 )
 from brewfather_mcp.inventory import (
@@ -427,6 +428,19 @@ def _truncation_note(data) -> str:
     return ""
 
 
+def _apply_ordering(
+    params: ListQueryParams, order_by: Optional[str], order_by_direction: Optional[str]
+) -> Optional[str]:
+    """Copy ordering options onto params. Returns an error message when they are invalid."""
+    if order_by_direction and order_by_direction not in ("asc", "desc"):
+        return f"Invalid request: order_by_direction must be 'asc' or 'desc', got {order_by_direction!r}"
+    if order_by_direction and not order_by:
+        return "Invalid request: order_by_direction needs order_by"
+    params.order_by = order_by or None
+    params.order_by_direction = OrderByDirection(order_by_direction) if order_by_direction else None
+    return None
+
+
 def _name_matches(item, name: Optional[str]) -> bool:
     return not name or name.lower() in (item.name or "").lower()
 
@@ -434,12 +448,27 @@ def _name_matches(item, name: Optional[str]) -> bool:
 # Batch Endpoints
 @mcp.tool(
     name="list_batches",
-    description="Lists all brew batches.",
+    description=(
+        "Lists all brew batches. Optional status (Planning, Brewing, Fermenting, Conditioning, "
+        "Completed, Archived), order_by (a batch field such as brewDate or name) and "
+        "order_by_direction (asc or desc)."
+    ),
 )
-async def read_batches_list() -> str:
+async def read_batches_list(
+    status: Optional[str] = None,
+    order_by: Optional[str] = None,
+    order_by_direction: Optional[str] = None,
+) -> str:
     logger.info("received request for batches list")
+    params = ListQueryParams()
+    if status:
+        valid = [s.value for s in BatchStatus]
+        if status not in valid:
+            return f"Invalid request: status must be one of {valid}, got {status!r}"
+        params.status = status
+    if error := _apply_ordering(params, order_by, order_by_direction):
+        return error
     try:
-        params = ListQueryParams()
         data = await brewfather_client.get_batches_list(params)
         formatted_response = [_format_batch_summary(item) for item in data.root]
         return "---\n".join(formatted_response) if formatted_response else "No batches found."
@@ -770,12 +799,19 @@ async def update_batch(
 # Recipe Endpoints
 @mcp.tool(
     name="list_recipes",
-    description="Lists all recipes.",
+    description=(
+        "Lists all recipes. Optional order_by (a recipe field such as name) and "
+        "order_by_direction (asc or desc)."
+    ),
 )
-async def read_recipes_list() -> str:
+async def read_recipes_list(
+    order_by: Optional[str] = None, order_by_direction: Optional[str] = None
+) -> str:
     logger.info("received request for recipes list")
+    params = ListQueryParams()
+    if error := _apply_ordering(params, order_by, order_by_direction):
+        return error
     try:
-        params = ListQueryParams()
         data = await brewfather_client.get_recipes_list(params)
         formatted_response = [_format_recipe_summary(item) for item in data.root]
         return "---\n".join(formatted_response) if formatted_response else "No recipes found."
@@ -967,11 +1003,16 @@ async def find_recipes(name: Optional[str] = None) -> str:
     description=(
         "Lists inventory items of one kind (fermentables, hops, miscs, yeasts) as "
         "'ID | name | stock'. Optional name filter (case-insensitive part of the name) "
-        "and in_stock_only to hide items with no stock."
+        "and in_stock_only to hide items with no stock. Optional order_by (an item field "
+        "such as name or inventory) and order_by_direction (asc or desc)."
     ),
 )
 async def list_inventory(
-    kind: str, name: Optional[str] = None, in_stock_only: bool = False
+    kind: str,
+    name: Optional[str] = None,
+    in_stock_only: bool = False,
+    order_by: Optional[str] = None,
+    order_by_direction: Optional[str] = None,
 ) -> str:
     logger.info(f"received request to list {kind} inventory")
     try:
@@ -981,6 +1022,8 @@ async def list_inventory(
     params = ListQueryParams()
     if in_stock_only:
         params.inventory_exists = True
+    if error := _apply_ordering(params, order_by, order_by_direction):
+        return error
     try:
         data = await brewfather_client.get_inventory_list(category, params)
         lines = [

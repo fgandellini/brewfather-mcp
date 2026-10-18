@@ -184,6 +184,16 @@ async def test_create_inventory_item_post(
     assert json.loads(result) == {"id": "new1"}
 
 
+def test_query_params_include_and_order():
+    params = ListQueryParams(
+        include=["recipe.fermentables", "notes"], order_by="name", order_by_direction="desc"
+    )
+    query = params.as_query_param_str()
+    assert "include=recipe.fermentables,notes" in query
+    assert "order_by=name" in query
+    assert "order_by_direction=desc" in query
+
+
 def test_query_params_status():
     params = ListQueryParams(status="Fermenting")
     assert "status=Fermenting" in params.as_query_param_str()
