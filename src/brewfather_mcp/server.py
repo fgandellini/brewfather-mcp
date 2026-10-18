@@ -31,6 +31,7 @@ from brewfather_mcp.types.misc import MiscUse, MiscType
 from brewfather_mcp.types.fermentable import FermentableType, FermentableGrainGroup
 from brewfather_mcp.types.base import MashStepType, FermentationStepType
 from brewfather_mcp.formatter import format_recipe_details
+from brewfather_mcp.readings import downsample_readings, parse_day
 from brewfather_mcp.validation import (
     parse_inventory_kind,
     require_number,
@@ -1250,6 +1251,52 @@ MEASUREMENTS:
 
     except Exception:
         logger.exception("Error getting last reading data")
+        raise
+
+
+@mcp.tool(
+    name="get_batch_readings_curve",
+    description=(
+        "Shows how temperature and gravity changed over the whole batch (or a date range) as "
+        "a fixed number of time buckets, each averaged across all devices. points is the "
+        "number of buckets (1-100, default 24). since and until are optional dates in "
+        "YYYY-MM-DD format. Use it for a fermentation curve; use get_batch_readings_summary "
+        "for the newest raw readings."
+    ),
+)
+async def get_batch_readings_curve(
+    batch_id: str,
+    points: int = 24,
+    since: Optional[str] = None,
+    until: Optional[str] = None,
+) -> str:
+    logger.info(f"received request for readings curve: batch={batch_id} points={points}")
+    if not 1 <= points <= 100:
+        return f"Invalid request: points must be between 1 and 100, got {points}"
+    try:
+        since_ms = parse_day(since)
+        until_ms = parse_day(until, end_of_day=True)
+    except ValueError:
+        return "Invalid request: since and until must be dates in YYYY-MM-DD format"
+    try:
+        readings = await brewfather_client.get_batch_readings(batch_id)
+        buckets = downsample_readings(readings.root, points, since_ms, until_ms)
+        if not buckets:
+            return "No sensor readings found for this batch and date range."
+        lines = [f"READINGS CURVE ({sum(b.count for b in buckets)} readings in {len(buckets)} buckets)"]
+        for bucket in buckets:
+            when = datetime.fromtimestamp(bucket.start_ms / 1000).strftime("%Y-%m-%d %H:%M")
+            line = f"{when}"
+            if bucket.temp is not None:
+                line += f" | {bucket.temp:.1f}°C"
+            if bucket.target_temp is not None:
+                line += f" (target {bucket.target_temp:.1f}°C)"
+            if bucket.sg is not None:
+                line += f" | SG {bucket.sg:.4f}"
+            lines.append(line)
+        return "\n".join(lines)
+    except Exception:
+        logger.exception("Error getting readings curve")
         raise
 
 

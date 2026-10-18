@@ -133,10 +133,17 @@ When developing, use `.env` file
 ### Key MCP Tools
 
 The server exposes these main tool categories:
-- **Inventory**: List/detail/search for fermentables, hops, yeasts, misc items; `set_inventory` (absolute or relative stock), `create_inventory_item`, `update_inventory_item`
-- **Recipes**: List, search, detail, `create_recipe`, `update_recipe` (shallow merge: ingredient lists replace the whole list)
-- **Batches**: List, search, detail, and update brewing batches with measured values (batches cannot be created through the API)
+- **Inventory**: List/detail/search for fermentables, hops, yeasts, misc items (`list_inventory` takes `order_by` and `order_by_direction`); `set_inventory` (absolute or relative stock), `create_inventory_item`, `update_inventory_item`
+- **Recipes**: List (with `order_by`/`order_by_direction`), search, detail, `create_recipe`, `update_recipe` (shallow merge: ingredient lists replace the whole list)
+- **Batches**: List (with `status`, `order_by`, `order_by_direction`), search, detail, and update brewing batches with measured values (batches cannot be created through the API)
+- **Readings**: `get_batch_readings_summary` (newest raw readings), `get_batch_readings_curve` (whole batch or a date range averaged into N time buckets, logic in `readings.py`), `get_batch_last_reading`, `get_batch_brewtracker`
 - **Summaries**: Combined inventory overviews and brewing style suggestions
+
+### List Query Parameters
+
+- `ListQueryParams` in `api.py` maps to the API's list query string: `limit`, `start_after`, `status`, `order_by`, `order_by_direction`, `inventory_exists`, `inventory_negative`, `complete` and `include`.
+- `include` is a comma-separated list of extra fields for list calls (dotted paths work, for example `recipe.fermentables`). Recipe and batch lists use it (`RECIPE_LIST_INCLUDE`, `BATCH_LIST_INCLUDE` in `server.py`) to show OG, FG, IBU and ABV in summaries. Detail calls ignore it.
+- `complete=true` returns full objects in list calls. No tool uses it, because no tool makes per-item detail calls.
 
 ### Code Patterns
 
