@@ -2,7 +2,11 @@ import asyncio
 import argparse
 import os
 import sys
+from brewfather_mcp.logconfig import configure_file_logging
 from brewfather_mcp.server import mcp
+
+# Module level: `mcp run src/main.py` imports this file and skips the __main__ block.
+configure_file_logging("/tmp/application.log")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Brewfather MCP Server")
