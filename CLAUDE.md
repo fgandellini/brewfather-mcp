@@ -51,30 +51,23 @@ For testing the HTTP server or deployment to cloud platforms:
 **Health Check:**
 - `curl http://localhost:8000/sse` - Check if SSE endpoint is responding (will hang waiting for events, which is expected)
 
-### Cloud Deployment
+### Cloudflare Worker
 
-The HTTP server can be deployed to any cloud platform that supports Python web applications:
+The server also runs as a Cloudflare Python Worker named `brewfather-mcp`, MCP endpoint `https://brewfather-mcp.fgandellini.workers.dev/mcp`. Design: `docs/superpowers/specs/2026-10-18-cloudflare-worker-deploy-design.md`.
 
-**Railway:**
-1. Connect GitHub repo to Railway
-2. Set environment variables: `BREWFATHER_API_USER_ID`, `BREWFATHER_API_KEY`
-3. Set start command: `PYTHONPATH=src python src/http_runner.py --port $PORT`
-
-**Fly.io:**
-1. `fly launch` to create app
-2. Set secrets: `fly secrets set BREWFATHER_API_USER_ID=xxx BREWFATHER_API_KEY=yyy`
-3. Configure start command in fly.toml
-
-**Render:**
-1. Connect repo to Render
-2. Set build command: `uv sync`
-3. Set start command: `PYTHONPATH=src python src/http_runner.py --port $PORT`
-4. Set environment variables in Render dashboard
-
-**Access deployed server:**
-- MCP endpoint: `https://your-app.platform.com/sse`
-- Test with: `mcpt tools https://your-app.platform.com/sse`
-
+- **Code**: `src/worker.py` is a thin entry point; the logic lives in `brewfather_mcp/auth.py` (bearer check), `worker_support.py` (stateless settings, per-request ASGI app) and `logconfig.py` (log setup and filter). Config: `wrangler.jsonc`.
+- **Run locally**: needs Node 22 (Node 26 fails with `bad option: --experimental-wasm-stack-switching`). Put `BREWFATHER_API_USER_ID`, `BREWFATHER_API_KEY` and `MCP_AUTH_TOKEN` in `.dev.vars` (git-ignored), then `uv run pywrangler dev --port 8787`. Restart it after every change to `.dev.vars`; a hot reload keeps the old values. Check that the bundle builds with `uv run pywrangler deploy --dry-run`.
+- **Secrets**: set once with `npx wrangler secret put <NAME>` for `BREWFATHER_API_USER_ID`, `BREWFATHER_API_KEY` and `MCP_AUTH_TOKEN`. They stay across deploys. GitHub holds only `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`.
+- **Deploys**: the CI `deploy` job runs `pywrangler deploy` on every push to `main`, after the tests pass, then checks that an unauthenticated request gets `401`. Pull requests only run `pywrangler deploy --dry-run`.
+- **Auth**: every path needs `Authorization: Bearer <MCP_AUTH_TOKEN>`. The Worker refuses everything when the secret is missing.
+- **Rules that keep it working**:
+  - `src/worker.py` imports at module level. Cloudflare snapshots memory at deploy time only for those imports; importing inside the handler costs about 2 s of CPU per cold start.
+  - Every request gets a fresh MCP session manager (`fresh_asgi_app`). The Workers ASGI adapter runs lifespan per request, and the SDK's manager can run only once.
+  - Library code must not configure logging or write files. Entry points do that (`logconfig.py`).
+  - The runtime dependency is `mcp` without the `[cli]` extra. `typer` pulls in `rich`, and `rich` calls `random.getrandbits()` at import, which Workers forbid while starting.
+  - `pywrangler` bundles from `[project].dependencies` and resolves its own `mcp` version (1.12.4 when this was written), not the one in `uv.lock`. Check both when changing SDK code.
+- **Free plan risk**: Cloudflare documents a 10 ms CPU limit per request on the free plan. Measured CPU was 44-59 ms median and nothing was blocked, but it is undocumented behavior. If requests start failing with error `1102`, the options are the Workers Paid plan or a Cloudflare Container.
+- The home server (`src/http_runner.py`, Docker) stays as the fallback.
 
 ## Architecture
 
@@ -83,6 +76,7 @@ The HTTP server can be deployed to any cloud platform that supports Python web a
 - **CLI**: `brewfather-mcp` script (defined in pyproject.toml, installed via uvx or uv)
 - **Local dev**: `src/main.py` or `src/brewfather_mcp/main.py` (both entry points exist)
 - **HTTP server**: `src/http_runner.py` for SSE transport
+- **Cloudflare Worker**: `src/worker.py` (see the Cloudflare Worker section)
 
 ### Core Components
 
