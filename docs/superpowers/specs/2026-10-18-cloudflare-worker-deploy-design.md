@@ -81,7 +81,7 @@ Spike measurements on the free plan, warm requests: CPU per request had a median
 
 - Remove `logging.basicConfig(...)` from `server.py`, because a library module should not configure logging (spike fact 7). Each entry point sets up its own logging:
   - stdio entry points (`src/main.py`, `src/brewfather_mcp/main.py`): keep logging to `/tmp/application.log`, as today. stdout carries the MCP protocol, so these entry points must not log there.
-  - `http_runner.py`: today its own `basicConfig` call does nothing, because `server.py` already ran one on import. After the change it takes effect and logs to stderr, which is what that code was written to do.
+  - `http_runner.py`: unchanged. Its own `basicConfig` call is a no-op both before and after this work (FastMCP installs a root handler when `server.py` is imported), so `--log-level` has no effect there. Logs go to stderr instead of `/tmp/application.log`.
   - Worker: log to stderr, which is the default, at `INFO`.
 - Filter out the harmless shutdown log (spike fact 6) on the Worker only: drop records from the `mcp.server.streamable_http` logger whose exception is `anyio.ClosedResourceError`. Every other error must still show.
 
