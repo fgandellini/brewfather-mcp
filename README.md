@@ -168,7 +168,7 @@ The server provides the following MCP tools:
 - `list_recipes` - List all recipes
 - `find_recipes(name?)` - Search recipes by name
 - `get_recipe_detail(recipe_id)` - Get detailed recipe information
-- `create_recipe(name, fields?)` - Create a recipe (metric units). Calculated values such as OG, IBU and color are computed by Brewfather and may be empty until the recipe is opened in the app
+- `create_recipe(name, fields?)` - Create a recipe (metric units). Calculated values such as OG, IBU and color are not stored by the API: Brewfather computes them (and adds the default equipment and style) the first time the recipe is opened in the app
 - `update_recipe(recipe_id, fields)` - Update top-level recipe fields. An ingredient list replaces the whole list, and empty lists are refused
 
 ### Batch Management

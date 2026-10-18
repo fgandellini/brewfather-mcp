@@ -797,8 +797,9 @@ async def read_recipes_list() -> str:
         "Creates a new recipe. fields holds optional recipe properties in metric units "
         "(liters, kg, grams, Celsius, SG): type (Extract, Partial Mash, All Grain), batchSize, "
         "boilSize, boilTime, efficiency, notes, fermentables, hops, miscs, yeasts, mash, "
-        "fermentation, ... Calculated values (OG, IBU, color) are not accepted and may be "
-        "empty until the recipe is opened in the Brewfather app."
+        "fermentation, ... Calculated values (OG, IBU, color) are not accepted: Brewfather computes them, "
+        "and default equipment and style are added, when the recipe is first opened in the "
+        "Brewfather app (verified live)."
     ),
 )
 async def create_recipe(name: str, fields: Optional[dict] = None) -> str:
