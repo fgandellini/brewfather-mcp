@@ -10,10 +10,11 @@ from workers import Response, WorkerEntrypoint, asgi
 # CPU on every cold start.
 from brewfather_mcp import server
 from brewfather_mcp.auth import is_authorized
-from brewfather_mcp.logconfig import install_noise_filter
+from brewfather_mcp.logconfig import configure_stdout_logging, install_noise_filter
 from brewfather_mcp.worker_support import configure_stateless, fresh_asgi_app
 
 configure_stateless(server.mcp)
+configure_stdout_logging()
 install_noise_filter()
 
 CREDENTIAL_NAMES = ("BREWFATHER_API_USER_ID", "BREWFATHER_API_KEY")
@@ -33,7 +34,11 @@ class Default(WorkerEntrypoint):
         # Fail closed: without a valid MCP_AUTH_TOKEN nobody gets in, on any path.
         token = getattr(self.env, "MCP_AUTH_TOKEN", None)
         if not is_authorized(request.headers.get("authorization"), token):
-            return Response('{"error": "Unauthorized"}', status=401)
+            return Response(
+                '{"error": "Unauthorized"}',
+                status=401,
+                headers={"Content-Type": "application/json"},
+            )
 
         if urlparse(request.url).path == "/mcp":
             return await asgi.fetch(fresh_asgi_app(server.mcp), request, self.env)

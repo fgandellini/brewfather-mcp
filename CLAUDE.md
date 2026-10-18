@@ -64,6 +64,7 @@ The server also runs as a Cloudflare Python Worker named `brewfather-mcp`, MCP e
   - `src/worker.py` imports at module level. Cloudflare snapshots memory at deploy time only for those imports; importing inside the handler costs about 2 s of CPU per cold start.
   - Every request gets a fresh MCP session manager (`fresh_asgi_app`). The Workers ASGI adapter runs lifespan per request, and the SDK's manager can run only once.
   - Library code must not configure logging or write files. Entry points do that (`logconfig.py`).
+  - The Worker logs to stdout (`configure_stdout_logging`). Cloudflare labels anything written to stderr as an error, so stderr would show every INFO line as one.
   - The runtime dependency is `mcp` without the `[cli]` extra. `typer` pulls in `rich`, and `rich` calls `random.getrandbits()` at import, which Workers forbid while starting.
   - `pywrangler` bundles from `[project].dependencies` and resolves its own `mcp` version (1.12.4 when this was written), not the one in `uv.lock`. Check both when changing SDK code.
 - **Free plan risk**: Cloudflare documents a 10 ms CPU limit per request on the free plan. Measured CPU was 44-59 ms median and nothing was blocked, but it is undocumented behavior. If requests start failing with error `1102`, the options are the Workers Paid plan or a Cloudflare Container.

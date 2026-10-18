@@ -9,6 +9,7 @@ import pytest
 from brewfather_mcp.logconfig import (
     DropClosedResourceNoise,
     configure_file_logging,
+    configure_stdout_logging,
     install_noise_filter,
 )
 
@@ -76,6 +77,32 @@ class TestConfigureFileLogging:
         logging.getLogger("brewfather_mcp.test").info("hello")
         clean_root.handlers[0].flush()
         assert "hello" in (tmp_path / "app.log").read_text()
+
+
+class TestConfigureStdoutLogging:
+    @pytest.fixture
+    def clean_root(self):
+        root = logging.getLogger()
+        saved_handlers, saved_level = list(root.handlers), root.level
+        root.handlers = []
+        yield root
+        root.handlers, root.level = saved_handlers, saved_level
+
+    def test_logs_go_to_stdout_not_stderr(self, clean_root, capsys):
+        # Cloudflare labels everything a Worker writes to stderr as an error.
+        configure_stdout_logging()
+        logging.getLogger("brewfather_mcp.test").info("hello from the worker")
+        captured = capsys.readouterr()
+        assert "hello from the worker" in captured.out
+        assert captured.err == ""
+
+    def test_replaces_handlers_installed_earlier_and_stays_at_one(self, clean_root):
+        # FastMCP() installs a RichHandler on the root logger when server.py is imported.
+        clean_root.addHandler(logging.StreamHandler(sys.stderr))
+        configure_stdout_logging()
+        configure_stdout_logging()
+        assert len(clean_root.handlers) == 1
+        assert clean_root.level == logging.INFO
 
 
 def test_importing_server_does_not_add_a_file_handler():

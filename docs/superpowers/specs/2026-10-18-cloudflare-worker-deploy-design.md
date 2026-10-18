@@ -81,8 +81,8 @@ Spike measurements on the free plan, warm requests: CPU per request had a median
 
 - Remove `logging.basicConfig(...)` from `server.py`, because a library module should not configure logging (spike fact 7). Each entry point sets up its own logging:
   - stdio entry points (`src/main.py`, `src/brewfather_mcp/main.py`): keep logging to `/tmp/application.log`, as today. stdout carries the MCP protocol, so these entry points must not log there.
-  - `http_runner.py`: unchanged. Its own `basicConfig` call is a no-op both before and after this work (FastMCP installs a root handler when `server.py` is imported), so `--log-level` has no effect there. Logs go to stderr instead of `/tmp/application.log`.
-  - Worker: log to stderr, which is the default, at `INFO`.
+  - `http_runner.py`: its own `basicConfig` call used to do nothing, because FastMCP installs a root handler when `server.py` is imported. It now uses `force=True`, so `--log-level` takes effect. Logs go to stderr instead of `/tmp/application.log`.
+  - Worker: log to **stdout** at `INFO` (`configure_stdout_logging`). Cloudflare labels everything written to stderr as an error, so the first live deploy showed every INFO line as an error. *(Changed after the first live deploy; the original design said stderr.)*
 - Filter out the harmless shutdown log (spike fact 6) on the Worker only: drop records from the `mcp.server.streamable_http` logger whose exception is `anyio.ClosedResourceError`. Every other error must still show.
 
 ### Secrets and configuration

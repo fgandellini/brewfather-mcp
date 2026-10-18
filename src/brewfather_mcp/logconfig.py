@@ -1,4 +1,5 @@
 import logging
+import sys
 
 import anyio
 
@@ -16,6 +17,20 @@ def configure_file_logging(path: str) -> None:
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         filename=path,
         filemode="a",
+        force=True,
+    )
+
+
+def configure_stdout_logging() -> None:
+    """Send all logs to stdout. For the Worker, where stdout is for logs.
+
+    Cloudflare labels everything a Worker writes to stderr as an error, so stderr would
+    show every INFO line as one. force=True for the same reason as in configure_file_logging.
+    """
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        stream=sys.stdout,
         force=True,
     )
 
