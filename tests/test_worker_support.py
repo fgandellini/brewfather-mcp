@@ -61,3 +61,16 @@ def test_reusing_one_app_fails_on_the_second_lifespan(mcp_server):
     with pytest.raises(RuntimeError, match="only be called once"):
         with TestClient(app, base_url=WORKER_URL):
             pass
+
+
+def test_apps_built_back_to_back_each_serve_their_own_request(mcp_server):
+    # One Worker isolate serves overlapping requests. The adapter starts an app's lifespan
+    # in a background task, so a second request can build its app before the first app's
+    # lifespan has started. Each app must still run its own session manager.
+    configure_stateless(mcp_server)
+    first = fresh_asgi_app(mcp_server)
+    second = fresh_asgi_app(mcp_server)
+    for app in (first, second):
+        with TestClient(app, base_url=WORKER_URL) as client:
+            response = client.post("/mcp", json=INITIALIZE, headers=HEADERS)
+        assert response.status_code == 200

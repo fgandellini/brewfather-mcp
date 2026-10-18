@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 from starlette.types import ASGIApp
@@ -19,6 +21,19 @@ def fresh_asgi_app(mcp: FastMCP) -> ASGIApp:
 
     The Workers ASGI adapter runs the app's lifespan on every request, and the SDK's
     session manager can run only once, so a reused app fails from the second request on.
+
+    The app's lifespan is bound to the manager created here. The SDK looks the manager up
+    again when the lifespan starts, and a request that overlaps this one can replace it in
+    between, leaving this app's handler with a manager that never ran.
     """
     mcp._session_manager = None
-    return mcp.streamable_http_app()
+    app = mcp.streamable_http_app()
+    manager = mcp._session_manager
+
+    @asynccontextmanager
+    async def lifespan(_app):
+        async with manager.run():
+            yield
+
+    app.router.lifespan_context = lifespan
+    return app
