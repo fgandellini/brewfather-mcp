@@ -42,8 +42,6 @@ jobs:
       group: deploy-worker
       cancel-in-progress: false
     env:
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       WORKER_URL: https://brewfather-mcp.fgandellini.workers.dev
 
     steps:
@@ -60,6 +58,9 @@ jobs:
       run: uv sync --locked --dev
     - name: Deploy to Cloudflare
       run: uv run pywrangler deploy
+      env:
+        CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
     - name: Smoke check (the Worker is up and refuses requests without a token)
       run: |
         for attempt in 1 2 3 4 5; do
