@@ -68,7 +68,8 @@ def main(
     # Configure logging
     logging.basicConfig(
         level=getattr(logging, log_level.upper()),
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        force=True,  # FastMCP already installed a root handler on import
     )
 
     logger.info(f"Starting Brewfather MCP HTTP server on {host}:{port}")
