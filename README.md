@@ -241,6 +241,17 @@ This builds the image, installs dependencies with `uv`, and runs `src/http_runne
 
 Point your MCP client at `http://<docker-host>:8010/mcp` with the `MCP_AUTH_TOKEN` value as a bearer token.
 
+## Cloudflare Worker
+
+The server can also run as a Cloudflare Python Worker, which stays up when your own machine is off. Every push to `main` deploys it through GitHub Actions.
+
+- MCP endpoint: `https://<worker-name>.<your-subdomain>.workers.dev/mcp`
+- Every request needs `Authorization: Bearer <MCP_AUTH_TOKEN>`. The Worker refuses all requests if that secret is not set.
+- Set the three secrets once with `npx wrangler secret put` (`BREWFATHER_API_USER_ID`, `BREWFATHER_API_KEY`, `MCP_AUTH_TOKEN`), and add `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` as GitHub repository secrets.
+- To run it locally you need Node 22: `uv run pywrangler dev` with a `.dev.vars` file holding the three secrets.
+
+See [the design](docs/superpowers/specs/2026-10-18-cloudflare-worker-deploy-design.md) for how it works and its limits.
+
 ## Troubleshooting
 
 ### Common Issues

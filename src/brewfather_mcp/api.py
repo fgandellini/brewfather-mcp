@@ -106,6 +106,11 @@ class BrewfatherClient:
     """Client for interacting with the Brewfather API."""
 
     def __init__(self):
+        self.max_pages = LIST_MAX_PAGES
+
+    @property
+    def auth(self) -> httpx.BasicAuth:
+        """Build the credentials on use, so the module can be imported without them."""
         user_id = os.getenv("BREWFATHER_API_USER_ID")
         api_key = os.getenv("BREWFATHER_API_KEY")
 
@@ -114,8 +119,7 @@ class BrewfatherClient:
                 "Missing Brewfather credentials in the environment variables: BREWFATHER_API_USER_ID or BREWFATHER_API_KEY"
             )
 
-        self.auth = httpx.BasicAuth(user_id, api_key)
-        self.max_pages = LIST_MAX_PAGES
+        return httpx.BasicAuth(user_id, api_key)
 
     def _check_response(self, response: httpx.Response) -> None:
         if response.status_code == 429:

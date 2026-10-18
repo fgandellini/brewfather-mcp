@@ -1,7 +1,6 @@
 """HTTP/SSE runner for the Brewfather MCP server."""
 
 import asyncio
-import hmac
 import logging
 from typing import Optional
 
@@ -9,6 +8,7 @@ import click
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 
+from brewfather_mcp.auth import is_authorized
 from brewfather_mcp.server import mcp
 
 logger = logging.getLogger(__name__)
@@ -19,7 +19,7 @@ class BearerAuthMiddleware:
 
     def __init__(self, app: ASGIApp, token: str) -> None:
         self.app = app
-        self.expected = f"Bearer {token}"
+        self.token = token
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
@@ -28,7 +28,7 @@ class BearerAuthMiddleware:
 
         headers = dict(scope.get("headers") or [])
         provided = headers.get(b"authorization", b"").decode("latin-1")
-        if not hmac.compare_digest(provided, self.expected):
+        if not is_authorized(provided, self.token):
             response = JSONResponse({"error": "Unauthorized"}, status_code=401)
             await response(scope, receive, send)
             return
@@ -68,7 +68,8 @@ def main(
     # Configure logging
     logging.basicConfig(
         level=getattr(logging, log_level.upper()),
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        force=True,  # FastMCP already installed a root handler on import
     )
 
     logger.info(f"Starting Brewfather MCP HTTP server on {host}:{port}")

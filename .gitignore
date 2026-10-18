@@ -183,3 +183,13 @@ cython_debug/
 # Debug and analysis output
 debug/
 .claude/settings.local.json
+
+# ----------------
+#   CLOUDFLARE
+# ----------------
+.dev.vars
+.wrangler/
+node_modules/
+.venv-workers/
+python_modules/
+pylock.toml

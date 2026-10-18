@@ -2,11 +2,13 @@ import asyncio
 import argparse
 import os
 import sys
+from brewfather_mcp.logconfig import configure_file_logging
 from brewfather_mcp.server import mcp
 
 
 def main() -> None:
     """Main entry point for the Brewfather MCP server."""
+    configure_file_logging("/tmp/application.log")
     parser = argparse.ArgumentParser(description="Brewfather MCP Server")
     parser.add_argument("--debug", action="store_true", help="Enable debug mode (saves API responses to files)")
     args = parser.parse_args()

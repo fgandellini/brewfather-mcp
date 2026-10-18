@@ -41,13 +41,6 @@ from typing import Optional
 from datetime import datetime
 
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    filename="/tmp/application.log",  # Path to log file
-    filemode="a",
-)
-
 logger = logging.getLogger(__name__)
 
 mcp = FastMCP("BrewfatherMCP")
