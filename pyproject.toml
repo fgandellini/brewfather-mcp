@@ -6,13 +6,11 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "httpx>=0.28.1",
-    "mcp[cli]>=1.9.0,<2.0.0",
+    "mcp>=1.9.0,<2.0.0",
     "pydantic>=2.10.6",
-    "pytest-cov>=6.0.0",
     "python-dotenv>=1.0.1",
     "starlette>=0.40.0",
     "uvicorn>=0.30.0",
-    "uv>=0.7.13",
 ]
 
 [project.scripts]
@@ -20,7 +18,11 @@ brewfather-mcp = "brewfather_mcp.main:main"
 
 [dependency-groups]
 dev = [
+    "mcp[cli]>=1.9.0,<2.0.0",
     "pytest>=8.3.5",
+    "pytest-cov>=6.0.0",
+    "workers-py",
+    "workers-runtime-sdk",
     "pytest-asyncio>=0.26.0",
     "pytest-dotenv>=0.5.2",
     "pytest-mock>=3.14.0",
