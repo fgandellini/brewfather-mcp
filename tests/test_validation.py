@@ -174,3 +174,63 @@ def test_recipe_rejects_unhashable_enum_value():
 def test_inventory_rejects_unhashable_enum_value():
     with pytest.raises(ValueError):
         validate_inventory_fields(InventoryCategory.HOPS, {"type": ["Pellet"]})
+
+
+# --- null only for fields the API documents as nullable ---
+
+
+@pytest.mark.parametrize(
+    "category, field",
+    [
+        (InventoryCategory.HOPS, "type"),
+        (InventoryCategory.HOPS, "alpha"),
+        (InventoryCategory.HOPS, "use"),
+        (InventoryCategory.FERMENTABLES, "type"),
+        (InventoryCategory.FERMENTABLES, "color"),
+        (InventoryCategory.YEASTS, "form"),
+        (InventoryCategory.YEASTS, "unit"),
+        (InventoryCategory.MISCS, "unit"),
+        (InventoryCategory.MISCS, "use"),
+    ],
+)
+def test_inventory_rejects_null_for_non_nullable_field(category, field):
+    with pytest.raises(ValueError, match="cannot be cleared"):
+        validate_inventory_fields(category, {field: None})
+
+
+@pytest.mark.parametrize(
+    "category, field",
+    [
+        (InventoryCategory.HOPS, "beta"),
+        (InventoryCategory.HOPS, "origin"),
+        (InventoryCategory.FERMENTABLES, "supplier"),
+        (InventoryCategory.FERMENTABLES, "grainCategory"),
+        (InventoryCategory.YEASTS, "laboratory"),
+        (InventoryCategory.YEASTS, "notes"),
+        (InventoryCategory.MISCS, "concentration"),
+    ],
+)
+def test_inventory_allows_null_for_nullable_field(category, field):
+    assert validate_inventory_fields(category, {field: None}) == {field: None}
+
+
+@pytest.mark.parametrize("field", ["type", "batchSize", "efficiency", "boilTime", "notes"])
+def test_recipe_rejects_null_for_non_optional_field(field):
+    with pytest.raises(ValueError, match="cannot be cleared"):
+        validate_recipe_payload({field: None}, creating=False)
+
+
+@pytest.mark.parametrize("field", ["author", "style", "styleConformity"])
+def test_recipe_allows_null_for_optional_field(field):
+    assert validate_recipe_payload({field: None}, creating=False) == {field: None}
+
+
+def test_recipe_allows_empty_string_to_clear_text():
+    assert validate_recipe_payload({"notes": ""}, creating=False) == {"notes": ""}
+
+
+def test_grain_category_allowlist():
+    fields = {"grainCategory": "Crystal/Caramel"}
+    assert validate_inventory_fields(InventoryCategory.FERMENTABLES, fields) == fields
+    with pytest.raises(ValueError):
+        validate_inventory_fields(InventoryCategory.FERMENTABLES, {"grainCategory": "Toasted"})

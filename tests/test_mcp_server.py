@@ -459,7 +459,7 @@ class TestBrewfatherMCP:
         with patch("brewfather_mcp.server.brewfather_client", mock_brewfather_client):
             result = await update_batch(batch_id="b", measuredOg=2.0)
             mock_brewfather_client.update_batch_detail.assert_not_called()
-            assert result.startswith("Invalid update:")
+            assert result.startswith("Invalid request:")
 
     @pytest.mark.asyncio
     async def test_update_batch_error(self, mock_brewfather_client):
@@ -798,3 +798,15 @@ class TestBrewfatherMCP:
         with patch("brewfather_mcp.server.brewfather_client", mock_brewfather_client):
             result = await create_recipe(name="Test")
             assert "Created recipe 'Test'" in result and "Response: Created" in result
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("tool_name", ["create_recipe", "update_recipe"])
+async def test_recipe_tool_descriptions(tool_name):
+    from brewfather_mcp.server import mcp
+
+    tools = {tool.name: tool for tool in await mcp.list_tools()}
+    description = tools[tool_name].description.lower()
+    assert "metric" in description
+    assert "replaces the whole list" in description
+    assert "og" in description and "opened in the brewfather app" in description

@@ -245,6 +245,12 @@ def test_created_id(response, expected):
     assert created_id(response) == expected
 
 
+def test_rate_limit_error_with_http_date_retry_after():
+    error = RateLimitError("Wed, 21 Oct 2026 07:28:00 GMT")
+    assert "Retry after Wed, 21 Oct 2026 07:28:00 GMT." in str(error)
+    assert "seconds" not in str(error)
+
+
 class TestFermentables:
     @pytest.mark.asyncio
     async def test_get_fermentables_list(

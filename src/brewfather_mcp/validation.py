@@ -111,11 +111,17 @@ _ADDITION_USES = {
     "Boil", "Mash", "Steep", "Primary", "Secondary", "Bottling", "Sparge", "Flameout",
 }
 
+GRAIN_CATEGORIES = {
+    "Base", "Base (Pilsner)", "Base (Wheat)", "Base (Munich)", "Base (Vienna)",
+    "Base (Maris Otter)", "Base (6-Row)", "Crystal/Caramel", "Roasted", "Acidulated",
+    "Other", "Ignore",
+}
+
 INVENTORY_FIELDS: dict[InventoryCategory, dict[str, object]] = {
     InventoryCategory.FERMENTABLES: {
         "name": _STR,
         "type": {"Grain", "Sugar", "Liquid Extract", "Dry Extract", "Adjunct", "Other"},
-        "grainCategory": _STR,
+        "grainCategory": GRAIN_CATEGORIES,
         "color": _NUM,
         "lovibond": _NUM,
         "use": _ADDITION_USES,
@@ -199,12 +205,32 @@ INVENTORY_FIELDS: dict[InventoryCategory, dict[str, object]] = {
 }
 
 
+# Fields the docs type as nullable ("...|null"); only these may be cleared with None.
+NULLABLE_INVENTORY_FIELDS: dict[InventoryCategory, set[str]] = {
+    InventoryCategory.FERMENTABLES: {
+        "attenuation", "costPerAmount", "diastaticPower", "grainCategory", "moisture",
+        "notFermentable", "potential", "protein", "supplier", "timeUnit", "use",
+    },
+    InventoryCategory.HOPS: {
+        "beta", "caryophyllene", "costPerAmount", "farnesene", "geraniol", "hsi",
+        "humulene", "linalool", "myrcene", "oil", "origin", "temp", "time", "timeUnit",
+        "usage", "year",
+    },
+    InventoryCategory.YEASTS: {
+        "attenuation", "costPerAmount", "flocculation", "laboratory", "maxAbv",
+        "maxAttenuation", "maxTemp", "minAttenuation", "minTemp", "notes", "productId",
+        "starter", "starterSize",
+    },
+    InventoryCategory.MISCS: {"amountPerL", "concentration", "costPerAmount", "timeUnit"},
+}
+
+
 def validate_inventory_fields(
     category: InventoryCategory, fields: dict[str, object]
 ) -> dict[str, object]:
     """Validate the fields of an inventory item create or partial update.
 
-    A value of None is allowed for every field except name; the API clears the field.
+    None clears a field, and is only allowed for fields the API documents as nullable.
     """
     spec = INVENTORY_FIELDS[category]
     if not fields:
@@ -218,8 +244,10 @@ def validate_inventory_fields(
 
     for name, value in fields.items():
         if value is None:
-            if name == "name":
-                raise ValueError("name cannot be empty")
+            if name not in NULLABLE_INVENTORY_FIELDS[category]:
+                raise ValueError(
+                    f"{name} cannot be cleared: it is not nullable for {category}"
+                )
             continue
         rule = spec[name]
         if rule == _STR:
@@ -278,6 +306,11 @@ RECIPE_FIELDS: dict[str, object] = {
 }
 
 
+# Optional top-level recipe fields (nullable in the docs); only these may be cleared with
+# None. Text fields can still be cleared with an empty string.
+NULLABLE_RECIPE_FIELDS = {"author", "style", "styleConformity"}
+
+
 def validate_recipe_payload(
     data: dict[str, object], *, creating: bool
 ) -> dict[str, object]:
@@ -303,6 +336,11 @@ def validate_recipe_payload(
                 raise ValueError(
                     f"clearing {field} would erase all {field} of the recipe; "
                     "send the full new list instead"
+                )
+            if field not in NULLABLE_RECIPE_FIELDS:
+                raise ValueError(
+                    f"{field} cannot be cleared: only {sorted(NULLABLE_RECIPE_FIELDS)} "
+                    "accept null (send an empty string to clear a text field)"
                 )
             continue
         if rule == _STR:

@@ -33,11 +33,12 @@ class RateLimitError(Exception):
 
     def __init__(self, retry_after: str | None = None):
         self.retry_after = retry_after
-        wait = (
-            f"Retry after {retry_after} seconds."
-            if retry_after
-            else "Please try again later."
-        )
+        if not retry_after:
+            wait = "Please try again later."
+        elif retry_after.isdigit():
+            wait = f"Retry after {retry_after} seconds."
+        else:  # Retry-After may also be an HTTP-date
+            wait = f"Retry after {retry_after}."
         super().__init__(
             f"Brewfather rate limit reached (500 calls per hour per API key). {wait}"
         )

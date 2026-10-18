@@ -764,7 +764,7 @@ async def update_batch(
     try:
         update_data = validate_batch_update(values, clear_fields)
     except ValueError as error:
-        return f"Invalid update: {error}"
+        return f"Invalid request: {error}"
 
     try:
         await brewfather_client.update_batch_detail(batch_id, update_data)
@@ -797,9 +797,10 @@ async def read_recipes_list() -> str:
         "Creates a new recipe. fields holds optional recipe properties in metric units "
         "(liters, kg, grams, Celsius, SG): type (Extract, Partial Mash, All Grain), batchSize, "
         "boilSize, boilTime, efficiency, notes, fermentables, hops, miscs, yeasts, mash, "
-        "fermentation, ... Calculated values (OG, IBU, color) are not accepted: Brewfather computes them, "
-        "and default equipment and style are added, when the recipe is first opened in the "
-        "Brewfather app (verified live)."
+        "fermentation, ... Send each ingredient list complete: a later update_recipe "
+        "replaces the whole list. Calculated values (OG, IBU, color) are not accepted: "
+        "Brewfather computes them, and adds default equipment and style, when the recipe "
+        "is first opened in the Brewfather app (verified live)."
     ),
 )
 async def create_recipe(name: str, fields: Optional[dict] = None) -> str:
@@ -828,8 +829,11 @@ async def create_recipe(name: str, fields: Optional[dict] = None) -> str:
     description=(
         "Updates a recipe. Only the top-level fields in fields change, and each one replaces "
         "the stored value completely: an ingredient list (fermentables, hops, miscs, yeasts) "
-        "REPLACES the whole list, so send every ingredient you want to keep. Set a field to "
-        "null to clear it. Metric units. Empty ingredient lists are refused."
+        "replaces the whole list, so send every ingredient you want to keep. Metric units. "
+        "Empty ingredient lists are refused. Only author, style and styleConformity can be "
+        "cleared with null; send an empty string to clear a text field. Calculated values "
+        "(OG, IBU, color) are not accepted: Brewfather recomputes them when the recipe is "
+        "opened in the Brewfather app."
     ),
 )
 async def update_recipe(recipe_id: str, fields: dict) -> str:
@@ -1045,7 +1049,8 @@ async def create_inventory_item(
     name="update_inventory_item",
     description=(
         "Updates properties of an inventory item (for example name, alpha, supplier). "
-        "Only the given fields change; set a field to null to clear it. This tool cannot "
+        "Only the given fields change; null clears a field where the API allows it "
+        "(for example supplier, origin, beta). This tool cannot "
         "change stock: use set_inventory for that."
     ),
 )
