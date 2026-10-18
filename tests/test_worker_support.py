@@ -1,5 +1,6 @@
 import pytest
 from mcp.server.fastmcp import FastMCP
+from starlette.applications import Starlette
 from starlette.testclient import TestClient
 
 from brewfather_mcp.worker_support import configure_stateless, fresh_asgi_app
@@ -74,3 +75,11 @@ def test_apps_built_back_to_back_each_serve_their_own_request(mcp_server):
         with TestClient(app, base_url=WORKER_URL) as client:
             response = client.post("/mcp", json=INITIALIZE, headers=HEADERS)
         assert response.status_code == 200
+
+
+def test_fresh_asgi_app_fails_loudly_when_the_sdk_creates_no_session_manager(mcp_server, monkeypatch):
+    # fresh_asgi_app relies on the SDK's private _session_manager. If a future SDK drops
+    # it, fail at build time with a clear message, not later inside a request.
+    monkeypatch.setattr(mcp_server, "streamable_http_app", lambda: Starlette())
+    with pytest.raises(RuntimeError, match="_session_manager"):
+        fresh_asgi_app(mcp_server)

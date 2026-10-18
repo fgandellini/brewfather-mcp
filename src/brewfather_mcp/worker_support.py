@@ -29,6 +29,11 @@ def fresh_asgi_app(mcp: FastMCP) -> ASGIApp:
     mcp._session_manager = None
     app = mcp.streamable_http_app()
     manager = mcp._session_manager
+    if manager is None:
+        raise RuntimeError(
+            "The MCP SDK no longer creates mcp._session_manager in streamable_http_app(); "
+            "update fresh_asgi_app"
+        )
 
     @asynccontextmanager
     async def lifespan(_app):
