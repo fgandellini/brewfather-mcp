@@ -766,3 +766,28 @@ class TestBrewfatherMCP:
             result = await update_recipe(recipe_id="r1", fields={"hops": []})
             mock_brewfather_client.update_recipe.assert_not_called()
             assert result.startswith("Invalid request:")
+
+    @pytest.mark.asyncio
+    async def test_search_tools_warn_when_results_may_be_truncated(
+        self, mock_brewfather_client
+    ):
+        names = [f"Beer {i}" for i in range(500)]
+        self._with_batches(mock_brewfather_client, names)
+        mock_brewfather_client.get_inventory_list.return_value = self._items(
+            MagicMock(spec=HopList), names, inventory=1.0
+        )
+        with patch("brewfather_mcp.server.brewfather_client", mock_brewfather_client):
+            for result in (
+                await find_batches(name="Beer 1"),
+                await find_batches(name="zzz"),
+                await list_inventory(kind="hops", name="zzz"),
+            ):
+                assert "first 500" in result and "incomplete" in result
+
+    @pytest.mark.asyncio
+    async def test_search_tools_no_warning_for_small_accounts(
+        self, mock_brewfather_client
+    ):
+        self._with_batches(mock_brewfather_client, ["Stout"])
+        with patch("brewfather_mcp.server.brewfather_client", mock_brewfather_client):
+            assert "incomplete" not in await find_batches(name="Stout")

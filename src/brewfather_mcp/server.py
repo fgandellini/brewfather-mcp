@@ -7,7 +7,12 @@ from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.prompts.base import Message
 from mcp.types import TextContent
 
-from brewfather_mcp.api import BrewfatherClient, ListQueryParams
+from brewfather_mcp.api import (
+    LIST_MAX_PAGES,
+    LIST_PAGE_SIZE,
+    BrewfatherClient,
+    ListQueryParams,
+)
 from brewfather_mcp.inventory import (
     get_fermentables_summary,
     get_hops_summary,
@@ -419,6 +424,16 @@ Type: {item.type or 'N/A'}
 """
 
 
+def _truncation_note(data) -> str:
+    """Warn when a list was cut at the page limit, so 'no match' cannot be trusted."""
+    limit = LIST_PAGE_SIZE * LIST_MAX_PAGES
+    if len(data.root) >= limit:
+        return (
+            f"\nOnly the first {limit} items were searched; results may be incomplete."
+        )
+    return ""
+
+
 def _name_matches(item, name: Optional[str]) -> bool:
     return not name or name.lower() in (item.name or "").lower()
 
@@ -458,7 +473,8 @@ async def find_batches(name: Optional[str] = None, status: Optional[str] = None)
     try:
         data = await brewfather_client.get_batches_list(params)
         found = [_format_batch_summary(i) for i in data.root if _name_matches(i, name)]
-        return "---\n".join(found) if found else "No batches found."
+        body = "---\n".join(found) if found else "No batches found."
+        return body + _truncation_note(data)
     except Exception:
         logger.exception("Error happened while searching batches")
         raise
@@ -948,7 +964,8 @@ async def find_recipes(name: Optional[str] = None) -> str:
     try:
         data = await brewfather_client.get_recipes_list(ListQueryParams())
         found = [_format_recipe_summary(i) for i in data.root if _name_matches(i, name)]
-        return "---\n".join(found) if found else "No recipes found."
+        body = "---\n".join(found) if found else "No recipes found."
+        return body + _truncation_note(data)
     except Exception:
         logger.exception("Error happened while searching recipes")
         raise
@@ -980,7 +997,8 @@ async def list_inventory(
             for i in data.root
             if _name_matches(i, name)
         ]
-        return "\n".join(lines) if lines else f"No {category} found."
+        body = "\n".join(lines) if lines else f"No {category} found."
+        return body + _truncation_note(data)
     except Exception:
         logger.exception(f"Error happened while listing {kind} inventory")
         raise

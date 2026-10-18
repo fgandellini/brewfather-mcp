@@ -150,3 +150,27 @@ def test_recipe_update_name_cannot_be_cleared():
 def test_recipe_update_empty():
     with pytest.raises(ValueError):
         validate_recipe_payload({}, creating=False)
+
+
+@pytest.mark.parametrize("field", ["fermentables", "hops", "miscs", "yeasts"])
+def test_recipe_update_rejects_null_ingredient_array(field):
+    with pytest.raises(ValueError, match="erase"):
+        validate_recipe_payload({field: None}, creating=False)
+
+
+@pytest.mark.parametrize("name", ["", "   "])
+def test_recipe_update_rejects_blank_name(name):
+    with pytest.raises(ValueError):
+        validate_recipe_payload({"name": name}, creating=False)
+
+
+def test_recipe_rejects_unhashable_enum_value():
+    with pytest.raises(ValueError):
+        validate_recipe_payload({"type": {}}, creating=False)
+    with pytest.raises(ValueError):
+        validate_recipe_payload({"ibuFormula": ["tinseth"]}, creating=False)
+
+
+def test_inventory_rejects_unhashable_enum_value():
+    with pytest.raises(ValueError):
+        validate_inventory_fields(InventoryCategory.HOPS, {"type": ["Pellet"]})

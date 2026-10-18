@@ -24,6 +24,8 @@ from .types import (
 from .types.brewtracker import BrewTrackerStatus, BatchReadingsList, LastReading
 
 BASE_URL: str = "https://api.brewfather.app/v2"
+LIST_PAGE_SIZE = 50  # API maximum
+LIST_MAX_PAGES = 10  # safety limit; one list call reads at most 500 items
 
 class RateLimitError(Exception):
     """Raised when Brewfather answers HTTP 429 (500 calls per hour per API key)."""
@@ -100,7 +102,7 @@ class BrewfatherClient:
             )
 
         self.auth = httpx.BasicAuth(user_id, api_key)
-        self.max_pages = 10  # Safety limit to prevent infinite loops
+        self.max_pages = LIST_MAX_PAGES
 
     def _check_response(self, response: httpx.Response) -> None:
         if response.status_code == 429:
@@ -173,7 +175,7 @@ class BrewfatherClient:
 
         # Set a reasonable limit per page if not specified
         if not current_params.limit:
-            current_params.limit = 50
+            current_params.limit = LIST_PAGE_SIZE
 
         page_count = 0
         while page_count < self.max_pages:

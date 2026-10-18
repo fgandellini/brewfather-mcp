@@ -233,7 +233,7 @@ def validate_inventory_fields(
         elif rule == _OBJ:
             if not isinstance(value, dict):
                 raise ValueError(f"{name} must be an object, got {value!r}")
-        elif value not in rule:
+        elif not isinstance(value, str) or value not in rule:
             raise ValueError(f"{name} must be one of {sorted(rule)}, got {value!r}")
     return dict(fields)
 
@@ -299,10 +299,15 @@ def validate_recipe_payload(
         if value is None:
             if field == "name":
                 raise ValueError("name cannot be cleared")
+            if field in INGREDIENT_ARRAYS and not creating:
+                raise ValueError(
+                    f"clearing {field} would erase all {field} of the recipe; "
+                    "send the full new list instead"
+                )
             continue
         if rule == _STR:
-            if not isinstance(value, str):
-                raise ValueError(f"{field} must be text, got {value!r}")
+            if not isinstance(value, str) or (field == "name" and not value.strip()):
+                raise ValueError(f"{field} must be non-empty text, got {value!r}")
         elif rule == _BOOL:
             if not isinstance(value, bool):
                 raise ValueError(f"{field} must be true or false, got {value!r}")
@@ -321,6 +326,6 @@ def validate_recipe_payload(
                 )
         elif isinstance(rule, tuple):
             require_number(field, value, *rule)
-        elif value not in rule:
+        elif not isinstance(value, str) or value not in rule:
             raise ValueError(f"{field} must be one of {sorted(rule)}, got {value!r}")
     return dict(data)

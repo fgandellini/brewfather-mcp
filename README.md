@@ -252,7 +252,7 @@ Point your MCP client at `http://<docker-host>:8010/mcp` with the `MCP_AUTH_TOKE
    - For local development: Ensure your `.env` file exists with valid credentials
    - Verify your Brewfather API credentials are correct and have the necessary permissions
 
-3. **Rate limit errors**: Brewfather allows 500 calls per hour per API key. The error message includes the delay to wait. The search tools read all pages of a list, so prefer them over repeated list calls
+3. **Rate limit errors**: Brewfather allows 500 calls per hour per API key. The error message includes the delay to wait. The search tools read up to 10 pages (500 items) of a list, which can cost up to 10 calls each, and they warn when a list was cut at 500 items; prefer them over repeated list calls
 
 4. **Connection timeouts**: Check your internet connection and Brewfather API status
 
