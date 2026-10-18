@@ -465,7 +465,7 @@ class TestBrewfatherMCP:
         with patch("brewfather_mcp.server.brewfather_client", mock_brewfather_client), \
              patch("brewfather_mcp.server.logger") as mock_logger:
             with pytest.raises(Exception, match="API Error Update Batch"):
-                await update_batch(batch_id="test-batch-id", status="Failed")
+                await update_batch(batch_id="test-batch-id", status="Completed")
             mock_logger.exception.assert_called_once_with("Error happened while updating batch test-batch-id")
 
     # --- Recipe Endpoint Tests ---
