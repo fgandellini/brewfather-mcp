@@ -66,6 +66,7 @@ The server also runs as a Cloudflare Python Worker named `brewfather-mcp`, MCP e
   - Library code must not configure logging or write files. Entry points do that (`logconfig.py`).
   - The Worker logs to stdout (`configure_stdout_logging`). Cloudflare labels anything written to stderr as an error, so stderr would show every INFO line as one.
   - The runtime dependency is `mcp` without the `[cli]` extra. `typer` pulls in `rich`, and `rich` calls `random.getrandbits()` at import, which Workers forbid while starting.
+  - `tzdata` is a runtime dependency. Pyodide has no zone database, so without it every tool that shows a time fails with `No time zone found with key Europe/Rome`.
   - `pywrangler` bundles from `[project].dependencies` and resolves its own `mcp` version (1.12.4 when this was written), not the one in `uv.lock`. Check both when changing SDK code.
 - **Free plan risk**: Cloudflare documents a 10 ms CPU limit per request on the free plan. Measured CPU was 44-59 ms median and nothing was blocked, but it is undocumented behavior. If requests start failing with error `1102`, the options are the Workers Paid plan or a Cloudflare Container.
 - The home server (`src/http_runner.py`, Docker) stays as the fallback.
@@ -119,6 +120,9 @@ Required environment variables:
 - `BREWFATHER_API_USER_ID` - Your Brewfather API user ID
 - `BREWFATHER_API_KEY` - Your Brewfather API key
 
+Optional:
+- `BREWFATHER_MCP_TIMEZONE` - IANA zone for the times that tools show and the days that they read (default `Europe/Rome`). The server cannot know the zone of the caller
+
 For testing, use `.test.env` file (automatically loaded by pytest).
 When developing, use `.env` file
 
@@ -152,3 +156,4 @@ The server exposes these main tool categories:
 - MCP tools provide formatted string outputs for Claude consumption
 - Error handling logs exceptions and re-raises them
 - Consistent URL building pattern using `_build_url()` method
+- The API sends times as UTC epochs. Format them only with the helpers in `utils.py`: `format_time()` adds the zone name (`2026-07-19 21:18:49 CEST`), `format_day()` gives a day, and `format_day_or_time()` is for day fields (brew, fermentation, bottling, best before). Brewfather stores a picked day as local midnight, so a midnight value shows as a day only. Never use `datetime.fromtimestamp()` without a zone: the output then depends on the machine (UTC on the Worker)

@@ -1,9 +1,16 @@
 import asyncio
+from datetime import datetime, timezone
 from typing import Any, Coroutine
 from unittest.mock import AsyncMock
 
 import pytest
-from brewfather_mcp.utils import get_in_batches
+from brewfather_mcp.utils import (
+    convert_timestamp_to_iso8601,
+    format_day,
+    format_day_or_time,
+    format_time,
+    get_in_batches,
+)
 from pydantic import BaseModel, RootModel
 
 
@@ -150,3 +157,57 @@ async def test_get_in_batches_preserves_order():
 
     # The order of results should match the order of tasks, which is based on the input order
     assert [item.id for item in result] == ["id_C", "id_A", "id_D", "id_B"]
+
+
+# Values from real batches. Brewfather stores a picked day as midnight in the user's zone.
+ROME_MIDNIGHT_CEST_MS = 1792792800000  # 2026-10-24 00:00 Rome, 2026-10-23 22:00 UTC
+ROME_MIDNIGHT_CET_MS = 1774047600000  # 2026-03-21 00:00 Rome, 2026-03-20 23:00 UTC
+STATUS_CHANGE_MS = 1784488729153  # 2026-07-19 21:18:49 Rome
+
+
+@pytest.fixture
+def rome(monkeypatch):
+    monkeypatch.delenv("BREWFATHER_MCP_TIMEZONE", raising=False)
+
+
+def test_format_time_uses_rome_by_default(rome):
+    assert format_time(STATUS_CHANGE_MS) == "2026-07-19 21:18:49 CEST"
+
+
+def test_format_time_shows_winter_offset(rome):
+    assert format_time(ROME_MIDNIGHT_CET_MS) == "2026-03-21 00:00:00 CET"
+
+
+def test_format_time_accepts_seconds_and_datetimes(rome):
+    aware = datetime(2026, 7, 19, 19, 18, 49, tzinfo=timezone.utc)
+    assert format_time(1784488729) == "2026-07-19 21:18:49 CEST"
+    assert format_time(aware) == "2026-07-19 21:18:49 CEST"
+    # A datetime with no zone is UTC, the zone of every API value.
+    assert format_time(aware.replace(tzinfo=None)) == "2026-07-19 21:18:49 CEST"
+
+
+def test_format_time_without_seconds(rome):
+    assert format_time(STATUS_CHANGE_MS, seconds=False) == "2026-07-19 21:18 CEST"
+
+
+def test_format_time_follows_configured_zone(monkeypatch):
+    monkeypatch.setenv("BREWFATHER_MCP_TIMEZONE", "UTC")
+    assert format_time(ROME_MIDNIGHT_CEST_MS) == "2026-10-23 22:00:00 UTC"
+
+
+def test_format_day_gives_the_local_day(rome):
+    assert format_day(ROME_MIDNIGHT_CEST_MS) == "2026-10-24"
+
+
+def test_format_day_or_time_drops_a_midnight_time(rome):
+    assert format_day_or_time(ROME_MIDNIGHT_CEST_MS) == "2026-10-24"
+    assert format_day_or_time(ROME_MIDNIGHT_CET_MS) == "2026-03-21"
+
+
+def test_format_day_or_time_keeps_a_real_time(rome):
+    assert format_day_or_time(STATUS_CHANGE_MS) == "2026-07-19 21:18:49 CEST"
+
+
+def test_convert_timestamp_to_iso8601_handles_empty_values(rome):
+    assert convert_timestamp_to_iso8601(None) is None
+    assert convert_timestamp_to_iso8601(ROME_MIDNIGHT_CEST_MS) == "2026-10-24"

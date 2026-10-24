@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from statistics import mean
 
+from brewfather_mcp.utils import local_zone
+
 
 @dataclass
 class ReadingBucket:
@@ -54,10 +56,13 @@ def downsample_readings(
 
 
 def parse_day(value: str | None, end_of_day: bool = False) -> int | None:
-    """Parse YYYY-MM-DD into milliseconds. Raises ValueError for any other format."""
+    """Parse a YYYY-MM-DD day in the local zone into milliseconds.
+
+    Raises ValueError for any other format.
+    """
     if not value:
         return None
-    day = datetime.strptime(value, "%Y-%m-%d")
+    day = datetime.strptime(value, "%Y-%m-%d").replace(tzinfo=local_zone())
     if end_of_day:
         day = day.replace(hour=23, minute=59, second=59)
     return int(day.timestamp() * 1000)

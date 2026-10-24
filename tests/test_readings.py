@@ -39,3 +39,10 @@ def test_parse_day():
     assert parse_day("2026-01-02", end_of_day=True) - parse_day("2026-01-02") == 86399000
     with pytest.raises(ValueError):
         parse_day("02/01/2026")
+
+
+def test_parse_day_uses_the_configured_zone(monkeypatch):
+    monkeypatch.setenv("BREWFATHER_MCP_TIMEZONE", "Asia/Tokyo")
+    # 2026-10-24 00:00 in Tokyo is 15:00 UTC the day before.
+    assert parse_day("2026-10-24") == 1792767600000
+    assert parse_day("2026-10-24", end_of_day=True) == 1792767600000 + 86399000

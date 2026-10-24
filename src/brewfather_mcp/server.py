@@ -32,6 +32,7 @@ from brewfather_mcp.types.fermentable import FermentableType, FermentableGrainGr
 from brewfather_mcp.types.base import MashStepType, FermentationStepType
 from brewfather_mcp.formatter import format_recipe_details
 from brewfather_mcp.readings import downsample_readings, parse_day
+from brewfather_mcp.utils import format_day, format_day_or_time, format_time
 from brewfather_mcp.validation import (
     parse_inventory_kind,
     require_number,
@@ -40,7 +41,6 @@ from brewfather_mcp.validation import (
     validate_recipe_payload,
 )
 from typing import Optional
-from datetime import datetime
 
 
 logger = logging.getLogger(__name__)
@@ -399,6 +399,11 @@ BATCH_LIST_INCLUDE = [
 ]
 
 
+DATES_NOTE = (
+    "Times show their zone (for example CEST). Values with no time are days, not midnight."
+)
+
+
 def _format_batch_stats(item) -> str:
     stats = [
         f"{label} {fmt.format(value)}"
@@ -415,7 +420,7 @@ def _format_batch_stats(item) -> str:
 
 def _format_batch_summary(item) -> str:
     brew_date_str = (
-        datetime.fromtimestamp(item.brew_date / 1000).strftime("%Y-%m-%d %H:%M:%S")
+        format_day(item.brew_date)
         if item.brew_date
         else "N/A"
     )
@@ -489,7 +494,7 @@ def _name_matches(item, name: Optional[str]) -> bool:
     description=(
         "Lists all brew batches. Optional status (Planning, Brewing, Fermenting, Conditioning, "
         "Completed, Archived), order_by (a batch field such as brewDate or name) and "
-        "order_by_direction (asc or desc)."
+        "order_by_direction (asc or desc). " + DATES_NOTE
     ),
 )
 async def read_batches_list(
@@ -519,7 +524,8 @@ async def read_batches_list(
     name="find_batches",
     description=(
         "Searches batches. name is a case-insensitive part of the batch name; status is one of "
-        "Planning, Brewing, Fermenting, Conditioning, Completed, Archived. Both are optional."
+        "Planning, Brewing, Fermenting, Conditioning, Completed, Archived. Both are optional. "
+        + DATES_NOTE
     ),
 )
 async def find_batches(name: Optional[str] = None, status: Optional[str] = None) -> str:
@@ -542,32 +548,30 @@ async def find_batches(name: Optional[str] = None, status: Optional[str] = None)
 
 @mcp.tool(
     name="get_batch_detail",
-    description="Get detailed information for a specific batch.",
+    description="Get detailed information for a specific batch. " + DATES_NOTE,
 )
 async def read_batch_detail(batch_id: str) -> str:
     logger.info(f"received request for batch detail: {batch_id}")
     try:
         item = await brewfather_client.get_batch_detail(batch_id)
         brew_date_str = (
-            datetime.fromtimestamp(item.brew_date / 1000).strftime(
-                "%Y-%m-%d %H:%M:%S"
-            )
+            format_day(item.brew_date)
             if item.brew_date
             else "N/A"
         )
         # Format dates
         fermentation_start_str = (
-            item.fermentation_start_date.strftime("%Y-%m-%d %H:%M:%S")
+            format_day_or_time(item.fermentation_start_date)
             if item.fermentation_start_date
             else "N/A"
         )
         fermentation_end_str = (
-            item.fermentation_end_date.strftime("%Y-%m-%d %H:%M:%S")
+            format_day_or_time(item.fermentation_end_date)
             if item.fermentation_end_date
             else "N/A"
         )
         bottling_date_str = (
-            item.bottling_date.strftime("%Y-%m-%d %H:%M:%S")
+            format_day_or_time(item.bottling_date)
             if item.bottling_date
             else "N/A"
         )
@@ -738,16 +742,19 @@ Tags: {', '.join(item.tags) if item.tags else 'None'}
             for measurement in fermentation_measurements:
                 formatted_response += f"- {measurement}\n"
         
+        if item.batch_notes:
+            formatted_response += f"\nBatch Notes:\n------------\n{item.batch_notes}\n"
+
         if item.notes:
-            formatted_response += "\nNotes:\n"
+            formatted_response += "\nStatus Timeline:\n"
             for note in item.notes:
-                note_time = datetime.fromtimestamp(note.timestamp / 1000).strftime("%Y-%m-%d %H:%M:%S")
+                note_time = format_time(note.timestamp)
                 formatted_response += f"- [{note.type}] {note.note} ({note_time})\n"
         
         if item.measurements:
             formatted_response += "\nMeasurements:\n-------------\n"
             for measurement in item.measurements:
-                meas_time = measurement.time.strftime("%Y-%m-%d %H:%M:%S") if hasattr(measurement, 'time') and measurement.time else "N/A"
+                meas_time = format_time(measurement.time) if hasattr(measurement, 'time') and measurement.time else "N/A"
                 comment = f" ({measurement.comment})" if hasattr(measurement, 'comment') and measurement.comment else ""
                 formatted_response += f"- {measurement.type}: {measurement.value} {measurement.unit} [{meas_time}]{comment}\n"
         
@@ -1210,9 +1217,8 @@ async def get_batch_last_reading(batch_id: str) -> str:
     """Get last sensor reading with current brewing status"""
     try:
         reading = await brewfather_client.get_batch_last_reading(batch_id)
-        
-        from datetime import datetime
-        reading_time = datetime.fromtimestamp(reading.time / 1000).strftime("%Y-%m-%d %H:%M:%S")
+
+        reading_time = format_time(reading.time)
         
         formatted_response = f"""LATEST SENSOR READING
 {'='*40}
@@ -1259,8 +1265,8 @@ MEASUREMENTS:
     description=(
         "Shows how temperature and gravity changed over the whole batch (or a date range) as "
         "a fixed number of time buckets, each averaged across all devices. points is the "
-        "number of buckets (1-100, default 24). since and until are optional dates in "
-        "YYYY-MM-DD format. Use it for a fermentation curve; use get_batch_readings_summary "
+        "number of buckets (1-100, default 24). since and until are optional days in "
+        "YYYY-MM-DD format, in the same zone as the times in the output. Use it for a fermentation curve; use get_batch_readings_summary "
         "for the newest raw readings."
     ),
 )
@@ -1285,7 +1291,7 @@ async def get_batch_readings_curve(
             return "No sensor readings found for this batch and date range."
         lines = [f"READINGS CURVE ({sum(b.count for b in buckets)} readings in {len(buckets)} buckets)"]
         for bucket in buckets:
-            when = datetime.fromtimestamp(bucket.start_ms / 1000).strftime("%Y-%m-%d %H:%M")
+            when = format_time(bucket.start_ms, seconds=False)
             line = f"{when}"
             if bucket.temp is not None:
                 line += f" | {bucket.temp:.1f}°C"
@@ -1314,9 +1320,7 @@ async def get_batch_readings_summary(batch_id: str, limit: int = 10) -> str:
         
         # Get the most recent readings (limited to avoid huge responses)
         recent_readings = readings.root[-limit:] if len(readings.root) > limit else readings.root
-        
-        from datetime import datetime
-        
+
         formatted_response = f"""RECENT SENSOR READINGS SUMMARY
 {'='*50}
 
@@ -1326,7 +1330,7 @@ Showing latest {len(recent_readings)} readings:
 """
         
         for reading in recent_readings:
-            reading_time = datetime.fromtimestamp(reading.time / 1000).strftime("%m-%d %H:%M")
+            reading_time = format_time(reading.time, seconds=False)
             
             device_name = reading.name or reading.id or reading.type or "Unknown Device"
             line = f"{reading_time} | {device_name}"

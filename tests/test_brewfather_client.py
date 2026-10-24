@@ -514,6 +514,7 @@ class TestBatches:
             "status": "Fermenting",
             "recipe": {"name": "Detailed Recipe", "_id": "recipe2"},
             "batchNo": 2,
+            "batchNotes": "Mash at 67C\n\nBoil was vigorous",
         } | version_mock
         respx_mock.get(f"{BASE_URL}/batches/{batch_id}").mock(
             return_value=httpx.Response(200, json=mock_data)
@@ -522,6 +523,7 @@ class TestBatches:
         assert isinstance(result, Batch)
         assert result.id == batch_id
         assert result.status == "Fermenting"
+        assert result.batch_notes == "Mash at 67C\n\nBoil was vigorous"
 
     @pytest.mark.asyncio
     async def test_update_batch_detail_success(

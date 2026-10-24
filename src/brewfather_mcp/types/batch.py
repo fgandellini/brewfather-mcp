@@ -55,6 +55,7 @@ class BatchDetail(Batch, VersionedModel):
     recipe_id: Optional[str] = Field(alias="recipeId", default=None)
     measurements: List[BatchMeasurement] = Field(default_factory=list)
     notes: List[BatchNote] = Field(default_factory=list)
+    batch_notes: str | None = Field(alias="batchNotes", default=None)
     measurement_devices: List[Dict[str, Any]] = Field(alias="measurementDevices", default_factory=list)
     tags: List[str] = Field(default_factory=list)
     brewed: bool = False

@@ -1,6 +1,7 @@
 """Shared recipe formatting utilities."""
 
 from brewfather_mcp.types import RecipeDetail
+from brewfather_mcp.utils import format_day, format_time
 
 def format_recipe_details(recipe: RecipeDetail, section_title: str = "RECIPE DETAILS") -> str:
     """Format recipe details into a comprehensive string representation.
@@ -16,9 +17,9 @@ def format_recipe_details(recipe: RecipeDetail, section_title: str = "RECIPE DET
     created_date = "N/A"
     last_modified = "N/A"
     if recipe.created:
-        created_date = recipe.created.to_datetime().strftime("%Y-%m-%d %H:%M:%S")
+        created_date = format_time(recipe.created.to_datetime())
     if recipe.timestamp:
-        last_modified = recipe.timestamp.to_datetime().strftime("%Y-%m-%d %H:%M:%S")
+        last_modified = format_time(recipe.timestamp.to_datetime())
     
     formatted_response = f"""Recipe: {recipe.name}
 Author: {recipe.author or 'N/A'}
@@ -144,8 +145,7 @@ Fermentables:
         for i, step in enumerate(recipe.fermentation.steps, 1):
             formatted_response += f"Step {i}: {step.type} - {step.step_temp}°C for {step.step_time} days"
             if hasattr(step, 'actual_time') and step.actual_time:
-                from datetime import datetime
-                actual_date = datetime.fromtimestamp(step.actual_time / 1000).strftime('%Y-%m-%d')
+                actual_date = format_day(step.actual_time)
                 formatted_response += f" (started: {actual_date})"
             formatted_response += "\n"
 

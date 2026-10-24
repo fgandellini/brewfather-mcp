@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import StrEnum
 from pydantic import BaseModel, RootModel, Field
 
@@ -9,8 +9,8 @@ class Timestamp(BaseModel):
     nanoseconds: int = Field(alias="_nanoseconds")
 
     def to_datetime(self) -> datetime:
-        """Convert the timestamp to a Python datetime object."""
-        return datetime.fromtimestamp(self.seconds + (self.nanoseconds / 1e9))
+        """Convert the timestamp to a UTC datetime."""
+        return datetime.fromtimestamp(self.seconds + (self.nanoseconds / 1e9), timezone.utc)
     
 class VersionedModel(BaseModel):
     # Version tracking fields found in API responses (but not always)

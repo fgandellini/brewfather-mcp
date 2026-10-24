@@ -42,7 +42,7 @@ from brewfather_mcp.types import (
     RecipeList,
     YeastList,
 )
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 @pytest.fixture
@@ -163,6 +163,8 @@ def mock_brewfather_client(mocker):
     # Mock Batch data - remove spec to avoid attribute restrictions
     mock_recipe = MagicMock()
     mock_recipe.name = "Test Recipe"
+    mock_recipe.created = None
+    mock_recipe.timestamp = None
     
     batch = MagicMock()
     batch.id = "test-batch-id"
@@ -221,10 +223,10 @@ def mock_brewfather_client(mocker):
     mock_style.style_guide = "BJCP 2021"
     
     mock_created = MagicMock()
-    mock_created.to_datetime.return_value.strftime.return_value = "2023-01-01 10:00:00"
+    mock_created.to_datetime.return_value = datetime(2023, 1, 1, 10, tzinfo=timezone.utc)
     
     mock_timestamp = MagicMock()
-    mock_timestamp.to_datetime.return_value.strftime.return_value = "2023-01-01 11:00:00"
+    mock_timestamp.to_datetime.return_value = datetime(2023, 1, 1, 11, tzinfo=timezone.utc)
     
     recipe = MagicMock()
     recipe.id = "test-recipe-id"
@@ -822,3 +824,76 @@ async def test_recipe_tool_descriptions(tool_name):
     assert "metric" in description
     assert "replaces the whole list" in description
     assert "og" in description and "opened in the brewfather app" in description
+
+
+# Values from a real batch: days are stored as midnight in Rome.
+ROME_DAY_MS = 1792792800000  # 2026-10-24 00:00 Rome
+STATUS_CHANGE_MS = 1784488729153  # 2026-07-19 21:18:49 Rome
+
+
+@pytest.fixture
+def rome_zone(monkeypatch):
+    monkeypatch.delenv("BREWFATHER_MCP_TIMEZONE", raising=False)
+
+
+@pytest.mark.asyncio
+async def test_batch_detail_shows_days_and_local_times(mock_brewfather_client, rome_zone):
+    from datetime import datetime, timezone
+
+    batch = mock_brewfather_client.get_batch_detail.return_value
+    batch.brew_date = ROME_DAY_MS
+    batch.fermentation_start_date = datetime.fromtimestamp(ROME_DAY_MS / 1000, timezone.utc)
+    batch.bottling_date = datetime.fromtimestamp(STATUS_CHANGE_MS / 1000, timezone.utc)
+    batch.notes = [MagicMock(note="Fermenting", type="statusChanged", timestamp=STATUS_CHANGE_MS)]
+    with patch("brewfather_mcp.server.brewfather_client", mock_brewfather_client):
+        result = await read_batch_detail("test-batch-id")
+    assert "Brew Date: 2026-10-24\n" in result
+    assert "Fermentation Start: 2026-10-24\n" in result
+    assert "Bottling Date: 2026-07-19 21:18:49 CEST\n" in result
+    assert "(2026-07-19 21:18:49 CEST)" in result
+
+
+@pytest.mark.asyncio
+async def test_batch_list_shows_brew_day(mock_brewfather_client, rome_zone):
+    mock_brewfather_client.get_batches_list.return_value.root[0].brew_date = ROME_DAY_MS
+    with patch("brewfather_mcp.server.brewfather_client", mock_brewfather_client):
+        result = await read_batches_list()
+    assert "Brew Date: 2026-10-24\n" in result
+
+
+@pytest.mark.asyncio
+async def test_readings_show_local_times(mock_brewfather_client, rome_zone):
+    from brewfather_mcp.server import (
+        get_batch_last_reading,
+        get_batch_readings_curve,
+        get_batch_readings_summary,
+    )
+
+    reading = MagicMock(
+        time=STATUS_CHANGE_MS, temp=18.0, sg=1.050, target_temp=None,
+        battery=None, rssi=None, ph=None, pressure=None,
+    )
+    reading.name = "iSpindel"
+    mock_brewfather_client.get_batch_last_reading.return_value = reading
+    mock_brewfather_client.get_batch_readings.return_value = MagicMock(root=[reading])
+    with patch("brewfather_mcp.server.brewfather_client", mock_brewfather_client):
+        assert "Reading Time: 2026-07-19 21:18:49 CEST" in await get_batch_last_reading("b")
+        assert "2026-07-19 21:18 CEST |" in await get_batch_readings_summary("b")
+        assert "2026-07-19 21:18 CEST |" in await get_batch_readings_curve("b")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("tool_name", ["list_batches", "find_batches", "get_batch_detail"])
+async def test_batch_tool_descriptions_explain_days(tool_name):
+    from brewfather_mcp.server import mcp
+
+    tools = {tool.name: tool for tool in await mcp.list_tools()}
+    assert "values with no time are days, not midnight" in tools[tool_name].description.lower()
+
+
+@pytest.mark.asyncio
+async def test_readings_curve_description_names_the_zone():
+    from brewfather_mcp.server import mcp
+
+    tools = {tool.name: tool for tool in await mcp.list_tools()}
+    assert "same zone as the times" in tools["get_batch_readings_curve"].description
